@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { UpcomingEvents } from "../components/UpcomingEvents";
 import {
@@ -20,9 +19,10 @@ import {
   Clock,
   Bell,
   CheckCheck,
+  RefreshCw,
 } from "lucide-react";
-import { notificationsApi, type NotificationItem } from "../api";
 import { useAuth } from "../components/context/AuthContext";
+import { useNotifications } from "../hooks/useNotifications";
 
 const attendanceData = [
   { name: "Mon", present: 230, absent: 5, late: 12 },
@@ -65,82 +65,15 @@ const formatRelativeTime = (isoDate: string) => {
 
 export const AdminDashboard = () => {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
-  const [notificationsError, setNotificationsError] = useState<string | null>(
-    null,
-  );
-  const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
-
-  const loadNotifications = async () => {
-    setIsLoadingNotifications(true);
-    setNotificationsError(null);
-
-    try {
-      const items = await notificationsApi.list({ limit: 6 });
-      setNotifications(items);
-    } catch (error) {
-      setNotificationsError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load notifications",
-      );
-    } finally {
-      setIsLoadingNotifications(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadNotifications();
-  }, []);
-
-  const handleMarkAsRead = async (id: string) => {
-    setIsUpdatingNotifications(true);
-    try {
-      await notificationsApi.markAsRead(id);
-      setNotifications((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                is_read: true,
-                read_at: new Date().toISOString(),
-              }
-            : item,
-        ),
-      );
-    } catch (error) {
-      setNotificationsError(
-        error instanceof Error
-          ? error.message
-          : "Failed to update notification",
-      );
-    } finally {
-      setIsUpdatingNotifications(false);
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    setIsUpdatingNotifications(true);
-    try {
-      await notificationsApi.markAllAsRead();
-      setNotifications((prev) =>
-        prev.map((item) => ({
-          ...item,
-          is_read: true,
-          read_at: item.read_at || new Date().toISOString(),
-        })),
-      );
-    } catch (error) {
-      setNotificationsError(
-        error instanceof Error
-          ? error.message
-          : "Failed to update notifications",
-      );
-    } finally {
-      setIsUpdatingNotifications(false);
-    }
-  };
+  const {
+    notifications,
+    isLoading: isLoadingNotifications,
+    isUpdating: isUpdatingNotifications,
+    error: notificationsError,
+    reload: reloadNotifications,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications({ limit: 6, pollIntervalMs: 30000 });
 
   const hasUnreadNotifications = notifications.some((item) => !item.is_read);
   const userDisplayName = user?.firstname || user?.email || "User";
@@ -332,7 +265,7 @@ export const AdminDashboard = () => {
           </div>
 
           <div className="lg:col-span-1 space-y-8">
-            <div className="max-h-[400px] overflow-hidden flex flex-col">
+            <div className="flex flex-col">
               <UpcomingEvents />
             </div>
 
@@ -344,15 +277,24 @@ export const AdminDashboard = () => {
                     Notifications
                   </h3>
                 </div>
-
-                <button
-                  type="button"
-                  disabled={!hasUnreadNotifications || isUpdatingNotifications}
-                  onClick={handleMarkAllAsRead}
-                  className="text-xs font-bold text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
-                >
-                  <CheckCheck size={14} /> Mark all read
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={isLoadingNotifications || isUpdatingNotifications}
+                    onClick={() => void reloadNotifications()}
+                    className="text-xs font-bold text-gray-500 hover:text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    <RefreshCw size={14} /> Refresh
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasUnreadNotifications || isUpdatingNotifications}
+                    onClick={() => void markAllAsRead()}
+                    className="text-xs font-bold text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    <CheckCheck size={14} /> Mark all read
+                  </button>
+                </div>
               </div>
 
               {notificationsError && (
@@ -377,7 +319,7 @@ export const AdminDashboard = () => {
                       type="button"
                       onClick={() =>
                         !notification.is_read &&
-                        void handleMarkAsRead(notification.id)
+                        void markAsRead(notification.id)
                       }
                       className={`w-full text-left flex gap-4 rounded-2xl px-3 py-3 transition-all ${
                         notification.is_read

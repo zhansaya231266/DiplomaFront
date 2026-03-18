@@ -14,6 +14,16 @@ export interface User {
   role?: string;
   fullName?: string;
   phone?: string;
+  phoneNumber?: string;
+  verificationStatus?: string;
+  joinedDate?: string;
+  department?: string;
+  departmentId?: string;
+  position?: string;
+  salary?: string;
+  location?: string;
+  organizationId?: string;
+  organizationName?: string;
 }
 
 export interface LoginPayload {
@@ -78,6 +88,60 @@ export interface NotificationItem {
   is_read: boolean;
   read_at?: string | null;
   created_at: string;
+}
+
+export interface EventItem {
+  id: string;
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  scope: "global" | "department" | string;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  createdBy: string;
+  createdByRole: string;
+  organizationId: string;
+  createdAt: string;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+export interface CreateEventPayload {
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  scope: "global" | "department";
+  departmentId?: string | null;
+}
+
+export interface UpdateEventPayload {
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  departmentId?: string | null;
+}
+
+export interface UserProfileResponse {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  email: string;
+  firstname: string;
+  lastname: string;
+  fullName: string;
+  role: string;
+  phone: string;
+  phoneNumber: string;
+  verificationStatus: string;
+  joinedDate: string;
+  department: string;
+  departmentId?: string;
+  position: string;
+  salary: string;
+  location: string;
 }
 
 const loginEndpoints = ["/auth/login", "/auth/sign-in", "/login", "/signin"];
@@ -445,6 +509,59 @@ export const notificationsApi = {
       throw new Error(
         getApiErrorMessage(error, "Failed to mark all notifications as read"),
       );
+    }
+  },
+};
+
+export const profileApi = {
+  getMe: async () => {
+    try {
+      const response = await api.get<UserProfileResponse>("/profile/me");
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load profile"));
+    }
+  },
+};
+
+export const eventsApi = {
+  getUpcoming: async () => {
+    try {
+      const response = await api.get<EventItem[]>("/events/upcoming");
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load events"));
+    }
+  },
+  getMy: async () => {
+    try {
+      const response = await api.get<EventItem[]>("/events/my");
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load my events"));
+    }
+  },
+  create: async (payload: CreateEventPayload) => {
+    try {
+      const response = await api.post<EventItem>("/events", payload);
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to create event"));
+    }
+  },
+  update: async (id: string, payload: UpdateEventPayload) => {
+    try {
+      const response = await api.patch<EventItem>(`/events/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to update event"));
+    }
+  },
+  delete: async (id: string) => {
+    try {
+      await api.delete(`/events/${id}`);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to delete event"));
     }
   },
 };

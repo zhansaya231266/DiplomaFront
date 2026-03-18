@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   User,
   Briefcase,
@@ -12,25 +12,104 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
+import { profileApi, type UserProfileResponse } from "../api";
 import { useAuth } from "../components/context/AuthContext";
+
+const formatJoinedDate = (value?: string) => {
+  if (!value) {
+    return "Not specified";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB");
+};
+
+const formatSalary = (value?: string) => {
+  if (!value) {
+    return "Not specified";
+  }
+
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return value;
+  }
+
+  return new Intl.NumberFormat("kk-KZ", {
+    style: "currency",
+    currency: "KZT",
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
 
 export const ProfilePage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
+  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await profileApi.getMe();
+        setProfile(response);
+        setUser({
+          firstname: response.firstname,
+          lastname: response.lastname,
+          email: response.email,
+          role: response.role,
+          fullName: response.fullName,
+          phone: response.phone,
+          phoneNumber: response.phoneNumber,
+          verificationStatus: response.verificationStatus,
+          joinedDate: response.joinedDate,
+          department: response.department,
+          departmentId: response.departmentId,
+          position: response.position,
+          salary: response.salary,
+          location: response.location,
+          organizationId: response.organizationId,
+          organizationName: response.organizationName,
+        });
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load profile",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadProfile();
+  }, [setUser]);
 
   const fullName =
-    [user?.firstname, user?.lastname].filter(Boolean).join(" ") ||
+    profile?.fullName ||
+    [profile?.firstname || user?.firstname, profile?.lastname || user?.lastname]
+      .filter(Boolean)
+      .join(" ") ||
+    profile?.email ||
     user?.email ||
     "User";
+
   const userData = {
-    email: user?.email || "No email",
-    role: user?.role || "EMPLOYEE",
-    position: "Not specified",
-    department: "Not specified",
-    joinedDate: "Not specified",
-    salary: "Not specified",
-    phone: "Not specified",
-    location: "Not specified",
+    email: profile?.email || user?.email || "No email",
+    role: profile?.role || user?.role || "EMPLOYEE",
+    position: profile?.position || "Not specified",
+    department: profile?.department || "Not specified",
+    joinedDate: formatJoinedDate(profile?.joinedDate),
+    salary: formatSalary(profile?.salary),
+    phone: profile?.phone || profile?.phoneNumber || "Not specified",
+    location: profile?.location || "Not specified",
   };
 
   const handleLogout = () => {
@@ -44,6 +123,12 @@ export const ProfilePage = () => {
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="max-w-6xl mx-auto w-full px-8 py-10 space-y-8">
+          {error && (
+            <div className="rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
 
@@ -56,7 +141,7 @@ export const ProfilePage = () => {
             <div className="flex-1 text-center md:text-left relative z-10">
               <div className="flex flex-col md:flex-row md:items-center gap-4 mb-3">
                 <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">
-                  {fullName}
+                  {isLoading ? "Loading profile..." : fullName}
                 </h1>
                 <span className="px-4 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-full uppercase tracking-widest">
                   {userData.role}

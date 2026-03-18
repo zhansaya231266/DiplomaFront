@@ -1,9 +1,17 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import {
   AUTH_CHANGE_EVENT,
   clearStoredAuth,
   getStoredUser,
   getStoredToken,
+  profileApi,
+  USER_STORAGE_KEY,
   type User,
 } from "../../api";
 
@@ -35,14 +43,65 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  const setUser = (nextUser: User | null) => {
-    setUserState(nextUser);
-  };
+  useEffect(() => {
+    const hydrateProfile = async () => {
+      const token = getStoredToken();
+      const storedUser = getStoredUser();
 
-  const logout = () => {
+      if (!token || !storedUser) {
+        return;
+      }
+
+      if (storedUser.role && (storedUser.role !== "Admin" || storedUser.departmentId)) {
+        return;
+      }
+
+      try {
+        const profile = await profileApi.getMe();
+        const nextUser: User = {
+          ...storedUser,
+          firstname: profile.firstname,
+          lastname: profile.lastname,
+          email: profile.email,
+          role: profile.role,
+          fullName: profile.fullName,
+          phone: profile.phone,
+          phoneNumber: profile.phoneNumber,
+          verificationStatus: profile.verificationStatus,
+          joinedDate: profile.joinedDate,
+          department: profile.department,
+          departmentId: profile.departmentId,
+          position: profile.position,
+          salary: profile.salary,
+          location: profile.location,
+          organizationId: profile.organizationId,
+          organizationName: profile.organizationName,
+        };
+
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
+        setUserState(nextUser);
+      } catch {
+        // Keep existing auth state; component-level pages can still handle profile errors.
+      }
+    };
+
+    void hydrateProfile();
+  }, []);
+
+  const setUser = useCallback((nextUser: User | null) => {
+    setUserState(nextUser);
+
+    if (nextUser) {
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
+    } else {
+      localStorage.removeItem(USER_STORAGE_KEY);
+    }
+  }, []);
+
+  const logout = useCallback(() => {
     clearStoredAuth();
     setUserState(null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
