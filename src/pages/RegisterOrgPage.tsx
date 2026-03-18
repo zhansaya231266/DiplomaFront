@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -7,35 +7,52 @@ import {
   EyeOffIcon,
   CheckIcon,
   ChevronRightIcon,
-  Globe,
-  Users,
-  DollarSign,
-  Briefcase,
+  Building2,
+  Hash,
+  MapPin,
+  Phone,
+  Mail,
+  Loader2,
+  Type,
+  ShieldCheck,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  KZ_CITIES,
-  INDUSTRIES,
-  EMPLOYEE_COUNT_RANGES,
-} from "../shared/constants/kazakhstan";
+import { authApi, organizationApi, persistAuth } from "../api";
+import { useAuth } from "../components/context/AuthContext";
 
-// Схема валидации
 const registerSchema = z
   .object({
-    fullName: z.string().min(2, "Too short"),
-    email: z.string().email("Invalid email"),
-    password: z.string().min(6, "At least 6 characters"),
+    // Admin Account
+    firstname: z.string().min(2, "First name is too short"),
+    lastname: z.string().min(2, "Last name is too short"),
+    email: z.string().email("Invalid email address"),
+    phoneNumber: z
+      .string()
+      .min(11, "Phone number is too short")
+      .refine((val) => val.startsWith("+7"), "Phone must start with +7"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string(),
-    companyName: z.string().min(2, "Enter company name"),
-    city: z.string().min(1, "Required"),
-    employees: z.string(),
-    industry: z.string(),
-    payrollFrequency: z.string(),
-    workingHours: z.number().min(1).max(24),
-    currency: z.string(),
+
+    // Organization Profile
+    organizationName: z.string().min(2, "Company name is required"),
+    vat: z.string().length(12, "BIN/VAT must be exactly 12 digits"),
+    streetAddress: z.string().min(5, "Enter full legal address"),
+    organizationDescription: z
+      .string()
+      .min(10, "Description is too short (min 10 chars)")
+      .max(250, "Description is too long"),
+
+    cityId: z.number(),
+    // Consents
+    privacyPolicyAccepted: z
+      .boolean()
+      .refine((value) => value, "You must accept the Privacy Policy"),
+    termsAndConditionsAccepted: z
+      .boolean()
+      .refine((value) => value, "You must accept the Terms"),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
+    message: "Passwords do not match",
     path: ["confirmPassword"],
   });
 
@@ -43,454 +60,533 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export const RegisterOrgPage = () => {
   const [step, setStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [showPass, setShowPass] = useState(false);
-  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [consentDocs, setConsentDocs] = useState<any[]>([]);
+  const [otpCode, setOtpCode] = useState("");
+  const [pendingCredentials, setPendingCredentials] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const {
     register,
     handleSubmit,
-    watch,
+    trigger,
+    setError,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      currency: "KZT - Kazakhstani Tenge",
-      payrollFrequency: "Monthly",
-      workingHours: 8,
-      city: "",
-      industry: "Technology",
-      employees: "1-50",
+      phoneNumber: "+7",
+      organizationDescription: "",
+      cityId: 1,
+      privacyPolicyAccepted: false,
+      termsAndConditionsAccepted: false,
     },
   });
 
-  const formData = watch();
+  // Загрузка активных документов с бэкенда
+  useEffect(() => {
+    const fetchDocs = async () => {
+      try {
+        const response = await organizationApi.getActiveDocuments();
+        if (response?.data) setConsentDocs(response.data);
+      } catch (e) {
+        console.error("Failed to load consent documents", e);
+      }
+    };
+    fetchDocs();
+  }, []);
 
-  const onSubmit = (data: RegisterFormValues) => {
-    console.log("Final Data:", data);
-    setStep(4); // Переход на экран успеха
+  const handleNextStep = async () => {
+    const isStepValid = await trigger([
+      "firstname",
+      "lastname",
+      "email",
+      "phoneNumber",
+      "password",
+      "confirmPassword",
+    ]);
+    if (isStepValid) setStep(2);
   };
 
+  const onSubmit = async (data: RegisterFormValues) => {
+    setIsLoading(true);
+    setApiError(null);
+
+    try {
+      await organizationApi.create(data);
+      setPendingCredentials({
+        email: data.email,
+        password: data.password,
+      });
+      setStep(3);
+    } catch (error: any) {
+      // 1. Извлекаем текст ошибки из разных возможных полей бэкенда
+      // Твой Go-код использует "details" для валидации и "error" для общих ошибок
+      const responseData = error.response?.data;
+      const serverMessage =
+        responseData?.details || responseData?.error || "Registration failed";
+
+      const msg = serverMessage.toLowerCase();
+
+      // Функция для установки ошибки в конкретное поле и возврата на нужный шаг
+      const setFieldError = (
+        field: keyof RegisterFormValues,
+        backToStep1: boolean = false,
+      ) => {
+        setError(field, { type: "server", message: serverMessage });
+        if (backToStep1) setStep(1);
+      };
+
+      // 2. Маппинг на основе текстов из твоего файла errors.go
+      // Ищем ключевые слова в строке, которую прислал Go
+      if (msg.includes("first name")) {
+        setFieldError("firstname", true);
+      } else if (msg.includes("last name")) {
+        setFieldError("lastname", true);
+      } else if (msg.includes("email")) {
+        setFieldError("email", true);
+      } else if (msg.includes("phone number")) {
+        setFieldError("phoneNumber", true);
+      } else if (msg.includes("password")) {
+        setFieldError("password", true);
+      } else if (msg.includes("organization name")) {
+        setFieldError("organizationName");
+      } else if (msg.includes("vat") || msg.includes("bin")) {
+        setFieldError("vat");
+      } else if (msg.includes("description")) {
+        setFieldError("organizationDescription");
+      } else if (msg.includes("street address") || msg.includes("address")) {
+        setFieldError("streetAddress");
+      } else if (msg.includes("privacy policy") || msg.includes("terms")) {
+        // Мапим на чекбоксы согласия
+        if (msg.includes("privacy"))
+          setError("privacyPolicyAccepted", { message: serverMessage });
+        if (msg.includes("terms"))
+          setError("termsAndConditionsAccepted", { message: serverMessage });
+      } else {
+        // 3. Если это общая ошибка (например, 500 или Conflict), выводим в apiError
+        setApiError(serverMessage);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!pendingCredentials) {
+      setApiError("Registration session expired. Please register again.");
+      return;
+    }
+
+    setIsLoading(true);
+    setApiError(null);
+
+    try {
+      await organizationApi.verifyOtp(pendingCredentials.email, otpCode);
+      const { token, user, refreshToken } = await authApi.login({
+        email: pendingCredentials.email,
+        password: pendingCredentials.password,
+      });
+      persistAuth(token, user, refreshToken);
+      setUser(user);
+      navigate("/dashboard");
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "Failed to verify account",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getDocUrl = (type: string) =>
+    consentDocs.find((d) => d.documentType === type)?.url || "#";
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-12 px-4 transition-colors duration-300">
-      {/* Header Section */}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-12 px-4 transition-all">
       <div className="max-w-md mx-auto text-center mb-8">
         <div className="flex justify-center mb-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-            <Briefcase size={28} />
+          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+            <Building2 size={28} />
           </div>
         </div>
-        <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">
-          Register Organization
+        <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+          HRMS Registration
         </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">
-          Create your HRMS workspace in minutes
+        <p className="text-gray-500 text-sm mt-2">
+          Setup your organization workspace
         </p>
       </div>
 
-      {/* Stepper */}
-      {step < 4 && (
-        <div className="max-w-lg mx-auto mb-12 flex items-center justify-between relative">
-          {[1, 2, 3].map((num) => (
-            <div
-              key={num}
-              className="z-10 flex flex-col items-center gap-2 group"
-            >
+      {step < 3 && (
+        <div className="max-w-xs mx-auto mb-12 flex items-center justify-between relative">
+          {[1, 2].map((num) => (
+            <div key={num} className="z-10 flex flex-col items-center">
               <div
                 className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${
                   step >= num
-                    ? "bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-900/30"
-                    : "bg-white dark:bg-gray-800 text-gray-400 border border-gray-200 dark:border-gray-700"
+                    ? "bg-blue-600 text-white shadow-lg ring-4 ring-blue-50 dark:ring-blue-900/20"
+                    : "bg-white border dark:bg-gray-800 dark:border-gray-700 text-gray-400"
                 }`}
               >
                 {step > num ? <CheckIcon size={18} /> : num}
               </div>
-              <span
-                className={`text-[11px] font-bold uppercase tracking-wider ${step >= num ? "text-blue-600" : "text-gray-400"}`}
-              >
-                {num === 1
-                  ? "Admin Info"
-                  : num === 2
-                    ? "Company Info"
-                    : "Settings"}
-              </span>
             </div>
           ))}
           <div className="absolute top-5 left-0 w-full h-[2px] bg-gray-200 dark:bg-gray-800 -z-0" />
-          <div
-            className="absolute top-5 left-0 h-[2px] bg-blue-600 transition-all duration-500 -z-0"
-            style={{ width: `${(step - 1) * 50}%` }}
-          />
         </div>
       )}
 
-      {/* Main Card */}
       <div className="max-w-2xl mx-auto bg-white dark:bg-gray-900 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 p-10 shadow-2xl shadow-blue-500/5">
-        {/* STEP 1: Admin Info */}
         {step === 1 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white border-l-4 border-blue-600 pl-4">
-              Administrator Information
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white border-l-4 border-blue-600 pl-4 uppercase tracking-wider text-sm">
+              Administrator Details
             </h2>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    Full Name
-                  </label>
-                  <input
-                    {...register("fullName")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    placeholder="John Smith"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    Email Address
-                  </label>
-                  <input
-                    {...register("email")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    placeholder="admin@company.kz"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    Password
-                  </label>
-                  <input
-                    type={showPass ? "text" : "password"}
-                    {...register("password")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3 top-10 text-gray-400 hover:text-blue-600 transition"
-                  >
-                    {showPass ? (
-                      <EyeOffIcon size={20} />
-                    ) : (
-                      <EyeIcon size={20} />
-                    )}
-                  </button>
-                </div>
-                <div className="relative">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    Confirm Password
-                  </label>
-                  <input
-                    type={showConfirmPass ? "text" : "password"}
-                    {...register("confirmPassword")}
-                    className={`w-full px-4 py-3 rounded-xl border ${errors.confirmPassword ? "border-red-500" : "border-gray-200"} dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition`}
-                    placeholder="••••••••"
-                  />
 
-                  {errors.confirmPassword && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.confirmPassword.message}
-                    </p>
-                  )}
-                </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <input
+                  {...register("firstname")}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="First Name"
+                />
+                {errors.firstname && (
+                  <p className="text-[10px] text-red-500 font-bold ml-1">
+                    {errors.firstname.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <input
+                  {...register("lastname")}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="Last Name"
+                />
+                {errors.lastname && (
+                  <p className="text-[10px] text-red-500 font-bold ml-1">
+                    {errors.lastname.message}
+                  </p>
+                )}
               </div>
             </div>
+
+            <div className="space-y-1">
+              <div className="relative">
+                <Mail
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={16}
+                />
+                <input
+                  {...register("email")}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="Work Email"
+                />
+              </div>
+              {errors.email && (
+                <p className="text-[10px] text-red-500 font-bold ml-1">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <div className="relative">
+                <Phone
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={16}
+                />
+                <input
+                  {...register("phoneNumber")}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="+7"
+                />
+              </div>
+              {errors.phoneNumber && (
+                <p className="text-[10px] text-red-500 font-bold ml-1">
+                  {errors.phoneNumber.message}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="relative">
+                <input
+                  type={showPass ? "text" : "password"}
+                  {...register("password")}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="Password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(!showPass)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600"
+                >
+                  {showPass ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
+                </button>
+              </div>
+              <input
+                type="password"
+                {...register("confirmPassword")}
+                className="w-full px-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                placeholder="Confirm Password"
+              />
+            </div>
+            {(errors.password || errors.confirmPassword) && (
+              <p className="text-[10px] text-red-500 font-bold ml-1">
+                {errors.password?.message || errors.confirmPassword?.message}
+              </p>
+            )}
+
             <button
-              onClick={() => setStep(2)}
+              onClick={handleNextStep}
               className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 active:scale-[0.99]"
             >
-              Next
+              Continue to Organization
             </button>
           </div>
         )}
 
-        {/* STEP 2: Company Info */}
         {step === 2 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white border-l-4 border-blue-600 pl-4">
-              Company Information
+          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 text-left">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white border-l-4 border-blue-600 pl-4 uppercase tracking-wider text-sm">
+              Organization Profile
             </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  Company Name
-                </label>
-                <input
-                  {...register("companyName")}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                  placeholder="Acme Corporation"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    <Globe size={16} className="text-blue-500" /> Industry
-                  </label>
-                  <select
-                    {...register("industry")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  >
-                    {INDUSTRIES.map((i) => (
-                      <option key={i} value={i}>
-                        {i}
-                      </option>
-                    ))}
-                  </select>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <div className="relative">
+                  <Building2
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={18}
+                  />
+                  <input
+                    {...register("organizationName")}
+                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                    placeholder="Company Name"
+                  />
                 </div>
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    <Users size={16} className="text-blue-500" /> Number of
-                    Employees
-                  </label>
-                  <select
-                    {...register("employees")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  >
-                    {EMPLOYEE_COUNT_RANGES.map((range) => (
-                      <option key={range} value={range}>
-                        {range}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {errors.organizationName && (
+                  <p className="text-[10px] text-red-500 font-bold ml-1">
+                    {errors.organizationName.message}
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  City (Kazakhstan)
-                </label>
-                <input
-                  {...register("city")}
-                  list="cities"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                  placeholder="Start typing city name..."
-                />
-                <datalist id="cities">
-                  {KZ_CITIES.map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
+              <div className="space-y-1">
+                <div className="relative">
+                  <Hash
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={18}
+                  />
+                  <input
+                    {...register("vat")}
+                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                    placeholder="BIN (12 digits)"
+                  />
+                </div>
+                {errors.vat && (
+                  <p className="text-[10px] text-red-500 font-bold ml-1">
+                    {errors.vat.message}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="flex gap-4">
+
+            <div className="space-y-1">
+              <div className="relative">
+                <Type
+                  className="absolute left-4 top-4 text-gray-400"
+                  size={18}
+                />
+                <textarea
+                  {...register("organizationDescription")}
+                  rows={2}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 resize-none transition"
+                  placeholder="Short business description..."
+                />
+              </div>
+              {errors.organizationDescription && (
+                <p className="text-[10px] text-red-500 font-bold ml-1">
+                  {errors.organizationDescription.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <div className="relative">
+                <MapPin
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={18}
+                />
+                <input
+                  {...register("streetAddress")}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:border-blue-500 transition"
+                  placeholder="Legal Address"
+                />
+              </div>
+              {errors.streetAddress && (
+                <p className="text-[10px] text-red-500 font-bold ml-1">
+                  {errors.streetAddress.message}
+                </p>
+              )}
+            </div>
+
+            {/* Consents Section */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="privacyPolicy"
+                  {...register("privacyPolicyAccepted")}
+                  className="mt-1 w-5 h-5 rounded border-gray-200 text-blue-600 focus:ring-blue-500 transition"
+                />
+                <label
+                  htmlFor="privacyPolicy"
+                  className="text-xs text-gray-500 leading-normal"
+                >
+                  I agree to the{" "}
+                  <a
+                    href={getDocUrl("PrivacyPolicy")}
+                    target="_blank"
+                    className="text-blue-600 font-bold hover:underline"
+                  >
+                    Privacy Policy
+                  </a>
+                </label>
+              </div>
+              {errors.privacyPolicyAccepted && (
+                <p className="text-[10px] text-red-500 font-bold ml-8">
+                  {errors.privacyPolicyAccepted.message}
+                </p>
+              )}
+
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  {...register("termsAndConditionsAccepted")}
+                  className="mt-1 w-5 h-5 rounded border-gray-200 text-blue-600 focus:ring-blue-500 transition"
+                />
+                <label
+                  htmlFor="terms"
+                  className="text-xs text-gray-500 leading-normal"
+                >
+                  I agree to the{" "}
+                  <a
+                    href={getDocUrl("TermsAndConditions")}
+                    target="_blank"
+                    className="text-blue-600 font-bold hover:underline"
+                  >
+                    Terms and Conditions
+                  </a>
+                </label>
+              </div>
+              {errors.termsAndConditionsAccepted && (
+                <p className="text-[10px] text-red-500 font-bold ml-8">
+                  {errors.termsAndConditionsAccepted.message}
+                </p>
+              )}
+            </div>
+
+            {apiError && (
+              <div className="p-4 bg-red-50 text-red-600 rounded-xl text-xs font-bold border border-red-100">
+                {apiError}
+              </div>
+            )}
+
+            <div className="flex gap-4 pt-4">
               <button
+                type="button"
                 onClick={() => setStep(1)}
-                className="flex-1 py-4 border border-gray-200 dark:border-gray-700 dark:text-white rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                className="flex-1 py-4 border border-gray-100 dark:border-gray-700 dark:text-white rounded-xl font-bold hover:bg-gray-50 transition"
               >
                 Back
               </button>
               <button
-                onClick={() => setStep(3)}
-                className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: Settings */}
-        {step === 3 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white border-l-4 border-blue-600 pl-4">
-              Initial Settings
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  Payroll Frequency
-                </label>
-                <select
-                  {...register("payrollFrequency")}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value="Monthly">Monthly</option>
-                  <option value="Bi-weekly">Bi-weekly</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  Standard Working Hours per Day
-                </label>
-                <input
-                  type="number"
-                  {...register("workingHours", { valueAsNumber: true })}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  <DollarSign size={16} className="text-blue-500" /> Currency
-                </label>
-                <select
-                  {...register("currency")}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value="KZT">KZT - Kazakhstani Tenge</option>
-                  <option value="USD">USD - US Dollar</option>
-                </select>
-              </div>
-
-              {/* Review Card */}
-              <div className="p-6 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                <h3 className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3">
-                  Review Your Information
-                </h3>
-                <div className="grid grid-cols-1 gap-y-2 text-sm">
-                  <p className="flex justify-between">
-                    <span className="text-gray-500">Admin:</span>{" "}
-                    <span className="font-bold dark:text-white">
-                      {formData.fullName} ({formData.email})
-                    </span>
-                  </p>
-                  <p className="flex justify-between">
-                    <span className="text-gray-500">Company:</span>{" "}
-                    <span className="font-bold dark:text-white">
-                      {formData.companyName}
-                    </span>
-                  </p>
-                  <p className="flex justify-between">
-                    <span className="text-gray-500">Location:</span>{" "}
-                    <span className="font-bold dark:text-white">
-                      {formData.city}, Kazakhstan
-                    </span>
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <button
-                onClick={() => setStep(2)}
-                className="flex-1 py-4 border border-gray-200 dark:border-gray-700 dark:text-white rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-              >
-                Back
-              </button>
-              <button
+                type="button"
                 onClick={handleSubmit(onSubmit)}
-                className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20"
+                disabled={isLoading}
+                className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg active:scale-[0.99]"
               >
-                Complete Registration
+                {isLoading ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  "Complete Registration"
+                )}
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4: Success Screen */}
-        {step === 4 && (
-          <div className="animate-in zoom-in duration-500 text-center">
-            {/* Иконка успеха точно как на мокапе */}
-            <div className="flex justify-center mb-6">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-green-500 shadow-sm">
-                <CheckIcon size={32} strokeWidth={3} />
-              </div>
+        {step === 3 && (
+          <div className="text-center py-6 animate-in zoom-in duration-500">
+            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-6 shadow-sm ring-8 ring-blue-50">
+              <ShieldCheck size={40} strokeWidth={2.5} />
             </div>
-
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-              Registration Successful!
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">
+              Verify Your Email
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-              Your HRMS workspace has been created and is ready to use
+            <p className="text-sm text-gray-500 mb-10 font-medium">
+              We created your organization and sent a verification code to{" "}
+              <span className="font-bold text-gray-900 dark:text-white">
+                {pendingCredentials?.email}
+              </span>
+              . Enter the OTP below and we&apos;ll sign you in automatically.
             </p>
 
-            {/* Блок Quick Start Guide */}
-            <div className="bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl p-6 text-left mb-8 border border-blue-100 dark:border-blue-900/30">
-              <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-4">
-                Quick Start Guide
-              </h4>
-              <div className="space-y-4">
-                {[
-                  {
-                    title: "Add Your Employees",
-                    desc: "Start by adding your team members to the system",
-                  },
-                  {
-                    title: "Configure Departments",
-                    desc: "Set up your organizational structure and departments",
-                  },
-                  {
-                    title: "Start Tracking",
-                    desc: "Begin monitoring attendance and processing payroll",
-                  },
-                ].map((item, i) => (
-                  <div key={i} className="flex gap-4">
-                    <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs flex-shrink-0 font-bold">
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold text-gray-900 dark:text-white leading-none">
-                        {item.title}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {item.desc}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            <div className="max-w-sm mx-auto text-left">
+              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                Verification Code
+              </label>
+              <input
+                value={otpCode}
+                onChange={(e) =>
+                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                placeholder="Enter OTP"
+                className="w-full px-5 py-4 rounded-2xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-xl tracking-[0.35em] font-semibold"
+              />
+            </div>
+
+            {apiError && (
+              <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-semibold border border-red-100 text-left">
+                {apiError}
               </div>
-            </div>
+            )}
 
-            {/* Три карточки функций внизу */}
-            <div className="grid grid-cols-3 gap-3 mb-8">
-              {[
-                {
-                  icon: <Users size={20} />,
-                  label: "Employee Management",
-                  sub: "Manage your workforce",
-                  color: "text-blue-600",
-                },
-                {
-                  icon: <DollarSign size={20} />,
-                  label: "Automated Payroll",
-                  sub: "Process salaries easily",
-                  color: "text-green-600",
-                },
-                {
-                  icon: <Briefcase size={20} />,
-                  label: "Reports & Analytics",
-                  sub: "Track performance",
-                  color: "text-purple-600",
-                },
-              ].map((card, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 flex flex-col items-center"
-                >
-                  <div className={`${card.color} mb-2`}>{card.icon}</div>
-                  <p className="text-[10px] font-bold text-gray-900 dark:text-white leading-tight">
-                    {card.label}
-                  </p>
-                  <p className="text-[8px] text-gray-500 mt-1">{card.sub}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Кнопка действия */}
             <button
-              onClick={() => navigate("/dashboard")}
-              className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+              onClick={handleVerifyOtp}
+              disabled={isLoading || otpCode.length < 4}
+              className="w-full mt-8 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Go to Dashboard <ChevronRightIcon size={18} />
+              {isLoading ? (
+                <Loader2 className="animate-spin" size={20} />
+              ) : (
+                <>
+                  Verify and Enter Dashboard <ChevronRightIcon size={18} />
+                </>
+              )}
             </button>
-
-            <p className="text-[10px] text-gray-400 mt-6">
-              You can always access these settings from your dashboard
-            </p>
           </div>
         )}
+      </div>
 
-        {/* Footer Link */}
-        <div className="mt-8 text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Already have an account?{" "}
-            <Link
-              to="/login"
-              className="text-blue-600 font-bold hover:underline"
-            >
-              Sign In
-            </Link>
-          </p>
-        </div>
+      <div className="mt-8 text-center">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Already have a workspace?{" "}
+          <Link
+            to="/login"
+            className="text-blue-600 font-bold hover:underline ml-1"
+          >
+            Log In
+          </Link>
+        </p>
       </div>
     </div>
   );

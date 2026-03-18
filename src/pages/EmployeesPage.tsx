@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { EmployeeCard } from "../components/EmployeeCard";
 import { AddEmployeeModal } from "../components/modals/AddEmployeeModal";
-import { Search, Filter, Plus, ChevronDown, X } from "lucide-react";
+import { Search, Plus, ChevronDown, X } from "lucide-react";
 
 export const EmployeesPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,26 +71,28 @@ export const EmployeesPage = () => {
   });
 
   return (
-    <div className="flex min-h-screen bg-[#F9FAFB]">
+    <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
       <main className="flex-1 p-10 overflow-y-auto">
+        {/* Header */}
         <header className="flex justify-between items-end mb-10">
           <div className="text-left">
-            <h1 className="text-[28px] font-extrabold text-gray-900 tracking-tight">
+            <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
               Employees
             </h1>
-            <p className="text-[15px] text-gray-500 mt-1 font-medium">
+            <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
               Manage your workforce ({data.length})
             </p>
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-blue-100 dark:shadow-none hover:bg-blue-700 transition-all"
           >
             <Plus size={20} strokeWidth={3} /> Add Employee
           </button>
         </header>
 
+        {/* Filters */}
         <div className="flex gap-4 mb-10">
           <div className="flex-1 relative group">
             <Search
@@ -101,17 +103,17 @@ export const EmployeesPage = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by name or position..."
-              className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-200 rounded-xl text-[15px] outline-none shadow-sm focus:ring-4 focus:ring-blue-50 transition-all"
+              className="w-full pl-12 pr-4 py-3.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 dark:text-white rounded-xl text-[15px] outline-none shadow-sm focus:ring-4 focus:ring-blue-50 dark:focus:ring-blue-900/20 transition-all"
             />
           </div>
           <div className="relative">
             <select
               value={selectedDept}
               onChange={(e) => setSelectedDept(e.target.value)}
-              className="appearance-none bg-white border border-gray-200 pl-6 pr-12 py-3.5 rounded-xl text-[15px] font-bold text-gray-700 outline-none shadow-sm cursor-pointer"
+              className="appearance-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 pl-6 pr-12 py-3.5 rounded-xl text-[15px] font-bold text-gray-700 dark:text-gray-200 outline-none shadow-sm cursor-pointer"
             >
               {departments.map((d) => (
-                <option key={d} value={d}>
+                <option key={d} value={d} className="dark:bg-gray-900">
                   {d}
                 </option>
               ))}
@@ -123,6 +125,7 @@ export const EmployeesPage = () => {
           </div>
         </div>
 
+        {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredEmployees.map((emp) => (
             <EmployeeCard
@@ -141,40 +144,53 @@ export const EmployeesPage = () => {
         {/* Modal View Profile */}
         {modalState.type === "view" && modalState.target && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[24px] w-full max-w-sm p-10 text-center relative animate-in zoom-in">
+            <div className="bg-white dark:bg-gray-900 rounded-[24px] w-full max-w-sm p-10 text-center relative animate-in zoom-in transition-colors duration-300">
               <button
                 onClick={() => setModalState({ type: null, target: null })}
-                className="absolute top-5 right-5 text-gray-400"
+                className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
               >
                 <X size={20} />
               </button>
               <img
                 src={modalState.target.image}
-                className="w-24 h-24 rounded-full mx-auto mb-4 border-4 border-blue-50 object-cover"
+                className="w-24 h-24 rounded-full mx-auto mb-4 border-4 border-blue-50 dark:border-blue-900/30 object-cover"
+                alt="Profile"
               />
-              <h2 className="text-[22px] font-bold">
+              <h2 className="text-[22px] font-bold dark:text-white">
                 {modalState.target.name}
               </h2>
-              <p className="text-blue-600 font-medium mb-8">
+              <p className="text-blue-600 dark:text-blue-400 font-medium mb-8">
                 {modalState.target.role}
               </p>
-              <div className="space-y-4 text-left bg-gray-50 p-6 rounded-2xl">
+              <div className="space-y-4 text-left bg-gray-50 dark:bg-gray-800/50 p-6 rounded-2xl">
                 <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400">Department</span>
-                  <span className="font-bold">{modalState.target.dept}</span>
+                  <span className="text-gray-400 dark:text-gray-500">
+                    Department
+                  </span>
+                  <span className="font-bold dark:text-gray-200">
+                    {modalState.target.dept}
+                  </span>
                 </div>
                 <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400">Salary</span>
-                  <span className="font-bold">{modalState.target.salary}</span>
+                  <span className="text-gray-400 dark:text-gray-500">
+                    Salary
+                  </span>
+                  <span className="font-bold dark:text-gray-200">
+                    {modalState.target.salary}
+                  </span>
                 </div>
                 <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400">Email</span>
-                  <span className="font-bold">{modalState.target.email}</span>
+                  <span className="text-gray-400 dark:text-gray-500">
+                    Email
+                  </span>
+                  <span className="font-bold dark:text-gray-200">
+                    {modalState.target.email}
+                  </span>
                 </div>
               </div>
               <button
                 onClick={() => setModalState({ type: null, target: null })}
-                className="w-full mt-8 py-4 bg-gray-900 text-white rounded-xl font-bold"
+                className="w-full mt-8 py-4 bg-gray-900 dark:bg-blue-600 text-white rounded-xl font-bold hover:bg-black dark:hover:bg-blue-700 transition-colors"
               >
                 Close Profile
               </button>

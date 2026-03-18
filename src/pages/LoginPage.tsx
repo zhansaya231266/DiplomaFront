@@ -4,8 +4,9 @@ import * as z from "zod";
 import { EyeIcon, EyeOffIcon, LockIcon, MailIcon } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { authApi, persistAuth } from "../api";
+import { useAuth } from "../components/context/AuthContext";
 
-// Схема валидации
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -15,7 +16,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const {
     register,
@@ -26,17 +29,22 @@ export const LoginPage = () => {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
-    console.log("Login attempt:", data);
-    // Имитация задержки запроса (например, проверка пароля)
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    setApiError(null);
 
-    // 3. После успешного входа перенаправляем на дашборд
-    navigate("/dashboard");
+    try {
+      const { token, user, refreshToken } = await authApi.login(data);
+      persistAuth(token, user, refreshToken);
+      setUser(user);
+      navigate("/dashboard");
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "Failed to sign in",
+      );
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col justify-center items-center p-4 transition-colors">
-      {/* Logo Section */}
       <div className="flex items-center gap-2 mb-4">
         <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
           HR
@@ -49,10 +57,8 @@ export const LoginPage = () => {
         Sign in to your account
       </p>
 
-      {/* Login Card */}
       <div className="bg-white dark:bg-gray-900 w-full max-w-md p-8 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-xl shadow-blue-500/5">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Email Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
               Email Address
@@ -79,18 +85,17 @@ export const LoginPage = () => {
             )}
           </div>
 
-          {/* Password Field */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Password
               </label>
-              <button
-                type="button"
+              <Link
+                to="/forgot-password"
                 className="text-xs font-medium text-blue-600 hover:underline"
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -125,7 +130,12 @@ export const LoginPage = () => {
             )}
           </div>
 
-          {/* Submit Button */}
+          {apiError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {apiError}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting}
@@ -135,7 +145,6 @@ export const LoginPage = () => {
           </button>
         </form>
 
-        {/* Footer of Card */}
         <div className="mt-8 text-center space-y-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Don't have an account?{" "}
@@ -149,7 +158,7 @@ export const LoginPage = () => {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Have an invitation code?{" "}
             <Link
-              to="/join-company"
+              to="/join"
               className="text-blue-600 font-semibold hover:underline"
             >
               Join Company

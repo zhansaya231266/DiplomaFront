@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { UpcomingEvents } from "../components/UpcomingEvents";
 import {
@@ -12,7 +13,16 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { Users, UserCheck, CreditCard, Clock } from "lucide-react";
+import {
+  Users,
+  UserCheck,
+  CreditCard,
+  Clock,
+  Bell,
+  CheckCheck,
+} from "lucide-react";
+import { notificationsApi, type NotificationItem } from "../api";
+import { useAuth } from "../components/context/AuthContext";
 
 const attendanceData = [
   { name: "Mon", present: 230, absent: 5, late: 12 },
@@ -30,84 +40,194 @@ const payrollData = [
   { name: "Mar", amount: 2845000 },
 ];
 
+const notificationColors: Record<string, string> = {
+  payroll: "bg-green-500",
+  salary: "bg-blue-500",
+  system: "bg-purple-500",
+};
+
+const formatRelativeTime = (isoDate: string) => {
+  const input = new Date(isoDate).getTime();
+  const diffInMinutes = Math.max(1, Math.floor((Date.now() - input) / 60000));
+
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes} min ago`;
+  }
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return `${diffInHours} hour${diffInHours === 1 ? "" : "s"} ago`;
+  }
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays} day${diffInDays === 1 ? "" : "s"} ago`;
+};
+
 export const AdminDashboard = () => {
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
+  const [notificationsError, setNotificationsError] = useState<string | null>(
+    null,
+  );
+  const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
+
+  const loadNotifications = async () => {
+    setIsLoadingNotifications(true);
+    setNotificationsError(null);
+
+    try {
+      const items = await notificationsApi.list({ limit: 6 });
+      setNotifications(items);
+    } catch (error) {
+      setNotificationsError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load notifications",
+      );
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadNotifications();
+  }, []);
+
+  const handleMarkAsRead = async (id: string) => {
+    setIsUpdatingNotifications(true);
+    try {
+      await notificationsApi.markAsRead(id);
+      setNotifications((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                is_read: true,
+                read_at: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setNotificationsError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update notification",
+      );
+    } finally {
+      setIsUpdatingNotifications(false);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    setIsUpdatingNotifications(true);
+    try {
+      await notificationsApi.markAllAsRead();
+      setNotifications((prev) =>
+        prev.map((item) => ({
+          ...item,
+          is_read: true,
+          read_at: item.read_at || new Date().toISOString(),
+        })),
+      );
+    } catch (error) {
+      setNotificationsError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update notifications",
+      );
+    } finally {
+      setIsUpdatingNotifications(false);
+    }
+  };
+
+  const hasUnreadNotifications = notifications.some((item) => !item.is_read);
+  const userDisplayName = user?.firstname || user?.email || "User";
+
   return (
-    <div className="flex min-h-screen bg-[#F9FAFB]">
+    <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
 
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* Header */}
         <header className="mb-8">
-          <h1 className="text-[28px] font-extrabold text-gray-900 tracking-tight">
+          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
             Dashboard
           </h1>
-          <p className="text-[15px] text-gray-500 mt-1 font-medium">
-            Welcome back, Admin. Here's what's happening today.
+          <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
+            Welcome back, {userDisplayName}. Here&apos;s what&apos;s happening
+            today.
           </p>
         </header>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {[
             {
               label: "Total Employees",
               val: "248",
               icon: Users,
-              color: "text-blue-600",
+              color: "text-blue-600 dark:text-blue-400",
+              bgColor: "bg-blue-50 dark:bg-blue-900/20",
               trend: "+12",
             },
             {
               label: "Present Today",
               val: "236",
               icon: UserCheck,
-              color: "text-green-600",
+              color: "text-green-600 dark:text-green-400",
+              bgColor: "bg-green-50 dark:bg-green-900/20",
               trend: "95.2%",
             },
             {
               label: "On Leave",
               val: "12",
               icon: Clock,
-              color: "text-orange-600",
+              color: "text-orange-600 dark:text-orange-400",
+              bgColor: "bg-orange-50 dark:bg-orange-900/20",
               trend: "-3",
             },
             {
               label: "Monthly Payroll",
-              val: "10,000,500 ₸",
+              val: "10,000,500 KZT",
               icon: CreditCard,
-              color: "text-purple-600",
+              color: "text-purple-600 dark:text-purple-400",
+              bgColor: "bg-purple-50 dark:bg-purple-900/20",
               trend: "+8.2%",
             },
           ].map((stat, i) => (
             <div
               key={i}
-              className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative"
+              className="bg-white dark:bg-gray-900 p-5 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm relative transition-all"
             >
               <div className="flex justify-between items-start mb-4">
-                <div className={`p-2 rounded-lg bg-gray-50 ${stat.color}`}>
+                <div className={`p-2 rounded-lg ${stat.bgColor} ${stat.color}`}>
                   <stat.icon size={20} />
                 </div>
                 <span
-                  className={`text-[12px] font-bold ${stat.trend.startsWith("+") ? "text-green-500" : "text-red-500"}`}
+                  className={`text-[12px] font-bold ${
+                    stat.trend.startsWith("+") || stat.trend.includes("%")
+                      ? "text-green-500"
+                      : "text-red-500"
+                  }`}
                 >
                   {stat.trend}
                 </span>
               </div>
-              <h3 className="text-[24px] font-bold text-gray-900 leading-none">
+              <h3 className="text-[24px] font-bold text-gray-900 dark:text-white leading-none">
                 {stat.val}
               </h3>
-              <p className="text-[13px] text-gray-400 font-medium mt-2">
+              <p className="text-[13px] text-gray-400 dark:text-gray-500 font-medium mt-2">
                 {stat.label}
               </p>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-8">
-          <div className="col-span-2 space-y-8">
-            {/* Attendance Chart */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[16px] font-bold text-gray-900">
+                <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
                   Weekly Attendance Overview
                 </h3>
               </div>
@@ -118,6 +238,7 @@ export const AdminDashboard = () => {
                       strokeDasharray="3 3"
                       vertical={false}
                       stroke="#F1F5F9"
+                      className="dark:stroke-gray-800"
                     />
                     <XAxis
                       dataKey="name"
@@ -136,6 +257,7 @@ export const AdminDashboard = () => {
                         borderRadius: "12px",
                         border: "none",
                         boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                        backgroundColor: "var(--tw-colors-gray-900)",
                       }}
                     />
                     <Legend
@@ -175,9 +297,8 @@ export const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Payroll Bar Chart */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-              <h3 className="text-[16px] font-bold text-gray-900 mb-6">
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all">
+              <h3 className="text-[16px] font-bold text-gray-900 dark:text-white mb-6">
                 Payroll Expenses
               </h3>
               <div className="h-[240px] w-full">
@@ -190,8 +311,13 @@ export const AdminDashboard = () => {
                       tick={{ fill: "#94A3B8", fontSize: 12 }}
                     />
                     <Tooltip
-                      cursor={{ fill: "#F8FAFC" }}
-                      contentStyle={{ borderRadius: "12px", border: "none" }}
+                      cursor={{ fill: "rgba(248, 250, 252, 0.05)" }}
+                      contentStyle={{
+                        borderRadius: "12px",
+                        border: "none",
+                        backgroundColor: "#111827",
+                        color: "#fff",
+                      }}
                     />
                     <Bar
                       dataKey="amount"
@@ -205,50 +331,87 @@ export const AdminDashboard = () => {
             </div>
           </div>
 
-          <div className="col-span-1 space-y-8">
-            {/* Upcoming Events */}
+          <div className="lg:col-span-1 space-y-8">
             <div className="max-h-[400px] overflow-hidden flex flex-col">
               <UpcomingEvents />
             </div>
 
-            {/* Recent Activity */}
-            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-              <h3 className="text-[16px] font-bold text-gray-900 mb-6">
-                Recent Activity
-              </h3>
-              <div className="space-y-6">
-                {[
-                  {
-                    t: "Sarah Johnson added to Engineering",
-                    d: "2 hours ago",
-                    c: "bg-blue-500",
-                  },
-                  {
-                    t: "February payroll processed",
-                    d: "1 day ago",
-                    c: "bg-green-500",
-                  },
-                  {
-                    t: "Q1 attendance report generated",
-                    d: "2 days ago",
-                    c: "bg-purple-500",
-                  },
-                ].map((act, i) => (
-                  <div key={i} className="flex gap-4">
-                    <div
-                      className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${act.c}`}
-                    ></div>
-                    <div>
-                      <p className="text-[13px] font-bold text-gray-900 leading-snug">
-                        {act.t}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">
-                        {act.d}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all">
+              <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Bell size={18} className="text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                    Notifications
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={!hasUnreadNotifications || isUpdatingNotifications}
+                  onClick={handleMarkAllAsRead}
+                  className="text-xs font-bold text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  <CheckCheck size={14} /> Mark all read
+                </button>
               </div>
+
+              {notificationsError && (
+                <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {notificationsError}
+                </div>
+              )}
+
+              {isLoadingNotifications ? (
+                <div className="text-sm text-gray-400 dark:text-gray-500">
+                  Loading notifications...
+                </div>
+              ) : notifications.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
+                  No notifications yet.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {notifications.map((notification) => (
+                    <button
+                      key={notification.id}
+                      type="button"
+                      onClick={() =>
+                        !notification.is_read &&
+                        void handleMarkAsRead(notification.id)
+                      }
+                      className={`w-full text-left flex gap-4 rounded-2xl px-3 py-3 transition-all ${
+                        notification.is_read
+                          ? "opacity-70"
+                          : "bg-gray-50/70 dark:bg-gray-800/40"
+                      }`}
+                    >
+                      <div
+                        className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                          notificationColors[notification.type] || "bg-gray-400"
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-[13px] font-bold text-gray-900 dark:text-white leading-snug">
+                            {notification.title}
+                          </p>
+                          {!notification.is_read && (
+                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                          {notification.message}
+                        </p>
+                        <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+                          {formatRelativeTime(notification.created_at)}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
