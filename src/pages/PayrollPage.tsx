@@ -1,137 +1,155 @@
-import { useState } from "react";
-import { Sidebar } from "../components/Sidebar";
+import { useEffect, useState } from "react";
 import {
-  DollarSign,
-  Send,
   CheckCircle2,
-  Clock,
-  Calendar,
-  Wallet,
-  TrendingDown,
   CircleDollarSign,
+  Clock,
+  DollarSign,
   Loader2,
+  Calendar,
+  Send,
+  TrendingDown,
+  Wallet,
   X,
 } from "lucide-react";
+import { Sidebar } from "../components/Sidebar";
+import {
+  employeesApi,
+  type EmployeeItem,
+  getApiErrorMessage,
+} from "../api";
+import { useAuth } from "../components/context/AuthContext";
+import { normalizeRole } from "../shared/utils/roles";
+import { employeePayslips } from "../shared/constants/employeePanel";
 
-export const PayrollPage = () => {
-  const [selectedMonth, setSelectedMonth] = useState("2026-03");
+type PayrollRow = {
+  id: string;
+  name: string;
+  dept: string;
+  base: number;
+  bonus: number;
+  deduct: number;
+  net: number;
+  status: "Processed" | "Pending";
+  isSent: boolean;
+};
+
+const getCurrentMonthValue = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
+const formatKZT = (amount: number) =>
+  new Intl.NumberFormat("kk-KZ", {
+    style: "currency",
+    currency: "KZT",
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const parseSalary = (value: string) => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const mapEmployeeToPayrollRow = (employee: EmployeeItem): PayrollRow => {
+  const base = parseSalary(employee.salaryRate);
+  const normalizedStatus = employee.status.toLowerCase();
+
+  return {
+    id: employee.id,
+    name: `${employee.firstName} ${employee.lastName}`.trim() || employee.email,
+    dept: employee.departmentName || "Unassigned",
+    base,
+    bonus: 0,
+    deduct: 0,
+    net: base,
+    status:
+      normalizedStatus === "active" || normalizedStatus === "processed"
+        ? "Processed"
+        : "Pending",
+    isSent: false,
+  };
+};
+
+const SuperAdminPayrollPage = () => {
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthValue);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [rows, setRows] = useState<PayrollRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Основное состояние данных
-  const [data, setData] = useState([
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      dept: "Engineering",
-      base: 916667,
-      bonus: 20000,
-      deduct: 15000,
-      net: 921667,
-      status: "Processed",
-      isSent: false,
-    },
-    {
-      id: 2,
-      name: "Michael Chen",
-      dept: "Marketing",
-      base: 783333,
-      bonus: 15000,
-      deduct: 12000,
-      net: 786333,
-      status: "Processed",
-      isSent: false,
-    },
-    {
-      id: 3,
-      name: "Emily Rodriguez",
-      dept: "Human Resources",
-      base: 600000,
-      bonus: 10000,
-      deduct: 10000,
-      net: 600000,
-      status: "Processed",
-      isSent: false,
-    },
-    {
-      id: 4,
-      name: "David Kim",
-      dept: "Engineering",
-      base: 733333,
-      bonus: 18000,
-      deduct: 13000,
-      net: 738333,
-      status: "Pending",
-      isSent: false,
-    },
-    {
-      id: 5,
-      name: "Jessica Taylor",
-      dept: "Sales",
-      base: 816667,
-      bonus: 30000,
-      deduct: 16000,
-      net: 830667,
-      status: "Pending",
-      isSent: false,
-    },
-  ]);
+  useEffect(() => {
+    const loadEmployees = async () => {
+      setIsLoading(true);
+      setErrorMessage("");
 
-  // Логика форматирования валюты
-  const formatKZT = (amount: number) => {
-    return new Intl.NumberFormat("kk-KZ", {
-      style: "currency",
-      currency: "KZT",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+      try {
+        const employees = await employeesApi.list();
+        setRows(employees.map(mapEmployeeToPayrollRow));
+      } catch (error) {
+        setErrorMessage(
+          getApiErrorMessage(error, "Failed to load payroll data"),
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Подтверждение и запуск процесса
+    void loadEmployees();
+  }, []);
+
   const confirmProcess = () => {
     setIsModalOpen(false);
     setIsProcessing(true);
 
-    setTimeout(() => {
-      setData((prev) => prev.map((emp) => ({ ...emp, status: "Processed" })));
+    window.setTimeout(() => {
+      setRows((prev) =>
+        prev.map((employee) => ({ ...employee, status: "Processed" })),
+      );
       setIsProcessing(false);
-      // Показываем сообщение об успехе
       setShowSuccess(true);
-      // Автоматически скрываем через 3 секунды
-      setTimeout(() => setShowSuccess(false), 3000);
-    }, 2000);
+      window.setTimeout(() => setShowSuccess(false), 3000);
+    }, 1200);
   };
 
-  // Отправка индивидуального листка
-  const handleSendPayslip = (id: number) => {
-    setData((prev) =>
-      prev.map((emp) => (emp.id === id ? { ...emp, isSent: true } : emp)),
+  const handleSendPayslip = (id: string) => {
+    setRows((prev) =>
+      prev.map((employee) =>
+        employee.id === id ? { ...employee, isSent: true } : employee,
+      ),
     );
   };
 
-  // Автоматический расчет статистики
-  const processedCount = data.filter((e) => e.status === "Processed").length;
-  const pendingCount = data.filter((e) => e.status === "Pending").length;
-  const totalNet = data.reduce((acc, curr) => acc + curr.net, 0);
+  const processedCount = rows.filter((employee) => employee.status === "Processed").length;
+  const pendingCount = rows.filter((employee) => employee.status === "Pending").length;
+  const totalBase = rows.reduce((total, employee) => total + employee.base, 0);
+  const totalBonus = rows.reduce((total, employee) => total + employee.bonus, 0);
+  const totalDeductions = rows.reduce(
+    (total, employee) => total + employee.deduct,
+    0,
+  );
+  const totalNet = rows.reduce((total, employee) => total + employee.net, 0);
 
   return (
     <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
-      <main className="flex-1 p-10 overflow-y-auto">
-        {/* HEADER */}
-        <header className="flex justify-between items-end mb-8 text-left">
+      <main className="flex-1 overflow-y-auto p-10">
+        <header className="mb-8 flex items-end justify-between text-left">
           <div>
-            <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+            <h1 className="text-[28px] font-extrabold tracking-tight text-gray-900 dark:text-white">
               Payroll
             </h1>
-            <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
+            <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
               Manage employee payroll and salary processing
             </p>
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
-            disabled={isProcessing || pendingCount === 0}
-            className="px-6 py-2.5 bg-blue-600 text-white text-[14px] font-bold rounded-xl hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-800 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 dark:shadow-none"
+            disabled={isProcessing || pendingCount === 0 || rows.length === 0}
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-[14px] font-bold text-white shadow-lg shadow-blue-200 transition-all hover:bg-blue-700 disabled:bg-gray-300 dark:shadow-none dark:disabled:bg-gray-800"
           >
             {isProcessing ? (
               <Loader2 size={18} className="animate-spin" />
@@ -142,24 +160,23 @@ export const PayrollPage = () => {
           </button>
         </header>
 
-        {/* STATS CARDS */}
-        <div className="grid grid-cols-4 gap-6 mb-8 text-left">
+        <div className="mb-8 grid grid-cols-4 gap-6 text-left">
           {[
             {
               label: "Total Base Salary",
-              value: 3650000,
+              value: totalBase,
               icon: Wallet,
               color: "text-blue-600",
             },
             {
               label: "Total Bonuses",
-              value: 930000,
+              value: totalBonus,
               icon: TrendingDown,
               color: "text-green-600",
             },
             {
               label: "Total Deductions",
-              value: 660000,
+              value: totalDeductions,
               icon: TrendingDown,
               color: "text-red-600",
             },
@@ -169,13 +186,13 @@ export const PayrollPage = () => {
               icon: DollarSign,
               color: "text-purple-600",
             },
-          ].map((stat, i) => (
+          ].map((stat) => (
             <div
-              key={i}
-              className="bg-white dark:bg-gray-900 p-6 rounded-[22px] border border-gray-100 dark:border-gray-800 shadow-sm"
+              key={stat.label}
+              className="rounded-[22px] border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
             >
-              <div className="flex justify-between items-start mb-4">
-                <p className="text-[13px] font-bold text-gray-400 uppercase tracking-wider">
+              <div className="mb-4 flex items-start justify-between">
+                <p className="text-[13px] font-bold uppercase tracking-wider text-gray-400">
                   {stat.label}
                 </p>
                 <stat.icon size={20} className={stat.color} />
@@ -183,46 +200,44 @@ export const PayrollPage = () => {
               <p className="text-[24px] font-black text-gray-900 dark:text-white">
                 {formatKZT(stat.value)}
               </p>
-              <p className="text-[12px] text-gray-400 mt-1 font-medium">
-                This month
+              <p className="mt-1 text-[12px] font-medium text-gray-400">
+                {selectedMonth}
               </p>
             </div>
           ))}
         </div>
 
-        {/* STATUS BAR WIDGETS */}
-        <div className="grid grid-cols-2 gap-6 mb-8 text-left">
-          <div className="flex items-center gap-4 p-5 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 rounded-2xl transition-all">
-            <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center">
+        <div className="mb-8 grid grid-cols-2 gap-6 text-left">
+          <div className="flex items-center gap-4 rounded-2xl border border-green-100 bg-green-50 p-5 transition-all dark:border-green-900/20 dark:bg-green-900/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white">
               <CheckCircle2 size={20} />
             </div>
             <div>
               <p className="text-[16px] font-bold text-gray-900 dark:text-green-100">
                 {processedCount} Employees
               </p>
-              <p className="text-[13px] text-green-600 dark:text-green-400 font-medium">
+              <p className="text-[13px] font-medium text-green-600 dark:text-green-400">
                 Payroll Processed
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-4 p-5 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/20 rounded-2xl transition-all">
-            <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center">
+          <div className="flex items-center gap-4 rounded-2xl border border-orange-100 bg-orange-50 p-5 transition-all dark:border-orange-900/20 dark:bg-orange-900/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-white">
               <Clock size={20} />
             </div>
             <div>
               <p className="text-[16px] font-bold text-gray-900 dark:text-orange-100">
                 {pendingCount} Employees
               </p>
-              <p className="text-[13px] text-orange-600 dark:text-orange-400 font-medium">
+              <p className="text-[13px] font-medium text-orange-600 dark:text-orange-400">
                 Pending Processing
               </p>
             </div>
           </div>
         </div>
 
-        {/* MONTH SELECTOR */}
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm mb-6 flex items-center gap-4">
-          <div className="flex items-center gap-3 px-4 py-2 border border-gray-100 dark:border-gray-800 rounded-xl bg-gray-50/50 dark:bg-gray-800/50">
+        <div className="mb-6 flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-800/50">
             <Calendar size={18} className="text-gray-400" />
             <span className="text-[14px] font-bold text-gray-500 dark:text-gray-400">
               Payroll Month:
@@ -230,17 +245,16 @@ export const PayrollPage = () => {
             <input
               type="month"
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent border-none outline-none text-[14px] font-bold text-gray-900 dark:text-white cursor-pointer"
+              onChange={(event) => setSelectedMonth(event.target.value)}
+              className="cursor-pointer border-none bg-transparent text-[14px] font-bold text-gray-900 outline-none dark:text-white"
             />
           </div>
         </div>
 
-        {/* PAYROLL TABLE */}
-        <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden text-left">
+        <div className="overflow-hidden rounded-[24px] border border-gray-100 bg-white text-left shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800">
+              <tr className="border-b border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/50">
                 {[
                   "Employee",
                   "Department",
@@ -250,114 +264,145 @@ export const PayrollPage = () => {
                   "Net Salary",
                   "Status",
                   "Actions",
-                ].map((h) => (
+                ].map((header) => (
                   <th
-                    key={h}
-                    className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest"
+                    key={header}
+                    className="px-6 py-5 text-[11px] font-bold uppercase tracking-widest text-gray-400"
                   >
-                    {h}
+                    {header}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-              {data.map((row) => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-gray-50/30 dark:hover:bg-gray-800/30 transition-colors group"
-                >
-                  <td className="px-6 py-5 font-bold text-gray-900 dark:text-white text-[14px]">
-                    {row.name}
-                  </td>
-                  <td className="px-6 py-5 text-gray-500 dark:text-gray-400 text-[14px]">
-                    {row.dept}
-                  </td>
-                  <td className="px-6 py-5 text-gray-900 dark:text-gray-300 text-[14px] font-medium">
-                    {formatKZT(row.base)}
-                  </td>
-                  <td className="px-6 py-5 text-green-600 dark:text-green-400 text-[14px] font-bold">
-                    +{formatKZT(row.bonus)}
-                  </td>
-                  <td className="px-6 py-5 text-red-600 dark:text-red-400 text-[14px] font-bold">
-                    -{formatKZT(row.deduct)}
-                  </td>
-                  <td className="px-6 py-5 text-gray-900 dark:text-white text-[14px] font-extrabold">
-                    {formatKZT(row.net)}
-                  </td>
-                  <td className="px-6 py-5">
-                    <span
-                      className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                        row.status === "Processed"
-                          ? "bg-green-50 dark:bg-green-900/20 text-green-600"
-                          : "bg-orange-50 dark:bg-orange-900/20 text-orange-600"
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <button
-                      onClick={() => handleSendPayslip(row.id)}
-                      disabled={row.status !== "Processed" || row.isSent}
-                      className={`flex items-center gap-2 text-[12px] font-bold transition-all ${
-                        row.isSent
-                          ? "text-gray-400 cursor-default"
-                          : row.status === "Processed"
-                            ? "text-blue-600 hover:text-blue-700 cursor-pointer"
-                            : "text-gray-300 dark:text-gray-700 cursor-not-allowed"
-                      }`}
-                    >
-                      {row.isSent ? (
-                        <CheckCircle2 size={14} className="text-green-500" />
-                      ) : (
-                        <Send size={14} />
-                      )}
-                      {row.isSent ? "Sent" : "Send"}
-                    </button>
+              {isLoading ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-16 text-center text-[14px] font-medium text-gray-500 dark:text-gray-400"
+                  >
+                    <div className="flex items-center justify-center gap-3">
+                      <Loader2 size={18} className="animate-spin" />
+                      Loading payroll data...
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : errorMessage ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-16 text-center text-[14px] font-medium text-red-600 dark:text-red-400"
+                  >
+                    {errorMessage}
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-16 text-center text-[14px] font-medium text-gray-500 dark:text-gray-400"
+                  >
+                    No employees found for payroll.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="group transition-colors hover:bg-gray-50/30 dark:hover:bg-gray-800/30"
+                  >
+                    <td className="px-6 py-5 text-[14px] font-bold text-gray-900 dark:text-white">
+                      {row.name}
+                    </td>
+                    <td className="px-6 py-5 text-[14px] text-gray-500 dark:text-gray-400">
+                      {row.dept}
+                    </td>
+                    <td className="px-6 py-5 text-[14px] font-medium text-gray-900 dark:text-gray-300">
+                      {formatKZT(row.base)}
+                    </td>
+                    <td className="px-6 py-5 text-[14px] font-bold text-green-600 dark:text-green-400">
+                      +{formatKZT(row.bonus)}
+                    </td>
+                    <td className="px-6 py-5 text-[14px] font-bold text-red-600 dark:text-red-400">
+                      -{formatKZT(row.deduct)}
+                    </td>
+                    <td className="px-6 py-5 text-[14px] font-extrabold text-gray-900 dark:text-white">
+                      {formatKZT(row.net)}
+                    </td>
+                    <td className="px-6 py-5">
+                      <span
+                        className={`rounded-lg px-3 py-1 text-[10px] font-black uppercase tracking-wider ${
+                          row.status === "Processed"
+                            ? "bg-green-50 text-green-600 dark:bg-green-900/20"
+                            : "bg-orange-50 text-orange-600 dark:bg-orange-900/20"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <button
+                        onClick={() => handleSendPayslip(row.id)}
+                        disabled={row.status !== "Processed" || row.isSent}
+                        className={`flex items-center gap-2 text-[12px] font-bold transition-all ${
+                          row.isSent
+                            ? "cursor-default text-gray-400"
+                            : row.status === "Processed"
+                              ? "cursor-pointer text-blue-600 hover:text-blue-700"
+                              : "cursor-not-allowed text-gray-300 dark:text-gray-700"
+                        }`}
+                      >
+                        {row.isSent ? (
+                          <CheckCircle2 size={14} className="text-green-500" />
+                        ) : (
+                          <Send size={14} />
+                        )}
+                        {row.isSent ? "Sent" : "Send"}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* MODAL CONFIRMATION */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
               className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"
               onClick={() => setIsModalOpen(false)}
-            ></div>
-            <div className="relative bg-white dark:bg-gray-900 w-full max-w-md p-8 rounded-[32px] shadow-2xl border border-gray-100 dark:border-gray-800 text-center animate-in zoom-in-95 duration-200">
+            />
+            <div className="relative w-full max-w-md rounded-[32px] border border-gray-100 bg-white p-8 text-center shadow-2xl duration-200 animate-in zoom-in-95 dark:border-gray-800 dark:bg-gray-900">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors"
+                className="absolute right-5 top-5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-white"
               >
                 <X size={20} />
               </button>
-              <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
                 <CircleDollarSign size={32} />
               </div>
-              <h3 className="text-[20px] font-extrabold text-gray-900 dark:text-white mb-2">
+              <h3 className="mb-2 text-[20px] font-extrabold text-gray-900 dark:text-white">
                 Process Payroll?
               </h3>
-              <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-8 font-medium">
+              <p className="mb-8 text-[15px] font-medium text-gray-500 dark:text-gray-400">
                 Are you sure to process payroll for{" "}
-                <span className="text-gray-900 dark:text-white font-bold">
+                <span className="font-bold text-gray-900 dark:text-white">
                   {selectedMonth}
                 </span>
-                ? This will calculate salaries for all employees.
+                ? This will mark all pending employees as processed.
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3.5 text-[14px] font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-2xl transition-colors"
+                  className="flex-1 rounded-2xl py-3.5 text-[14px] font-bold text-gray-500 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
                 >
                   No, Cancel
                 </button>
                 <button
                   onClick={confirmProcess}
-                  className="flex-1 py-3.5 text-[14px] font-bold bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 dark:shadow-none transition-all"
+                  className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-[14px] font-bold text-white shadow-lg shadow-blue-200 transition-all hover:bg-blue-700 dark:shadow-none"
                 >
                   Yes, Process
                 </button>
@@ -366,11 +411,10 @@ export const PayrollPage = () => {
           </div>
         )}
 
-        {/* SUCCESS TOAST */}
         {showSuccess && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 duration-300">
-            <div className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-gray-800 dark:border-gray-200">
-              <div className="bg-green-500 rounded-full p-1">
+          <div className="fixed bottom-10 left-1/2 z-[100] -translate-x-1/2 duration-300 animate-in slide-in-from-bottom-5">
+            <div className="flex items-center gap-3 rounded-2xl border border-gray-800 bg-gray-900 px-6 py-4 text-white shadow-2xl dark:border-gray-200 dark:bg-white dark:text-gray-900">
+              <div className="rounded-full bg-green-500 p-1">
                 <CheckCircle2 size={18} className="text-white" />
               </div>
               <span className="text-[14px] font-bold">
@@ -378,7 +422,7 @@ export const PayrollPage = () => {
               </span>
               <button
                 onClick={() => setShowSuccess(false)}
-                className="ml-4 text-gray-400 hover:text-white dark:hover:text-gray-600 transition-colors"
+                className="ml-4 text-gray-400 transition-colors hover:text-white dark:hover:text-gray-600"
               >
                 <X size={16} />
               </button>
@@ -388,4 +432,72 @@ export const PayrollPage = () => {
       </main>
     </div>
   );
+};
+
+const EmployeePayrollPage = () => {
+  return (
+    <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
+      <Sidebar />
+      <main className="flex-1 p-10 overflow-y-auto">
+        <header className="mb-8">
+          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+            Payroll
+          </h1>
+          <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
+            History of your payslips with PDF download by month.
+          </p>
+        </header>
+
+        <div className="space-y-5">
+          {employeePayslips.map((payslip) => (
+            <div
+              key={payslip.id}
+              className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+            >
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                <div>
+                  <h2 className="text-[18px] font-bold text-gray-900 dark:text-white">
+                    {payslip.month}
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Paid on {payslip.payDate}
+                  </p>
+                </div>
+
+                <div className="flex flex-col md:items-end">
+                  <p className="text-[22px] font-black text-gray-900 dark:text-white">
+                    {formatKZT(payslip.netSalary)}
+                  </p>
+                  <p className="mt-1 text-[12px] text-green-600 dark:text-green-400">
+                    {payslip.status}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.alert(`Download ${payslip.pdfLabel}`)}
+                  className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  Download PDF
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export const PayrollPage = () => {
+  const { user } = useAuth();
+  const role = normalizeRole(user?.role);
+
+  if (role === "Employee") {
+    return <EmployeePayrollPage />;
+  }
+
+  return <SuperAdminPayrollPage />;
 };

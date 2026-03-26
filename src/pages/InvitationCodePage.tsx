@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
+  getApiErrorMessage,
   inviteApi,
   type InviteVerificationResponse,
 } from "../api";
@@ -10,6 +11,8 @@ type ActivateAccountState = {
   code: string;
   invite: InviteVerificationResponse;
 };
+
+const VERIFIED_INVITE_STORAGE_KEY = "verified_invite";
 
 export const InvitationCodePage = () => {
   const navigate = useNavigate();
@@ -30,13 +33,15 @@ export const InvitationCodePage = () => {
 
     try {
       const invite = await inviteApi.verify(code);
+      sessionStorage.setItem(
+        VERIFIED_INVITE_STORAGE_KEY,
+        JSON.stringify({ code, invite } satisfies ActivateAccountState),
+      );
       navigate("/activate-account", {
         state: { code, invite } satisfies ActivateAccountState,
       });
     } catch (error) {
-      setApiError(
-        error instanceof Error ? error.message : "Failed to verify invite code",
-      );
+      setApiError(getApiErrorMessage(error, "Failed to verify invite code"));
     } finally {
       setIsSubmitting(false);
     }

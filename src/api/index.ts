@@ -2,6 +2,37 @@ import axios, { AxiosError } from "axios";
 
 const DEFAULT_API_URL = "http://localhost:8080/v1";
 const API_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
+const parseEndpointList = (value: string | undefined, fallback: string[]) => {
+  if (!value?.trim()) {
+    return fallback;
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const DEPARTMENTS_ENDPOINTS = parseEndpointList(
+  import.meta.env.VITE_DEPARTMENTS_ENDPOINTS as string | undefined,
+  [
+    "/departments",
+    "/reference/departments",
+    "/references/departments",
+    "/lookup/departments",
+  ],
+);
+
+const POSITIONS_ENDPOINTS = parseEndpointList(
+  import.meta.env.VITE_POSITIONS_ENDPOINTS as string | undefined,
+  [
+    "/positions",
+    "/reference/positions",
+    "/references/positions",
+    "/lookup/positions",
+  ],
+);
+
 const TOKEN_STORAGE_KEY = "token";
 const REFRESH_TOKEN_STORAGE_KEY = "refresh_token";
 const USER_STORAGE_KEY = "user";
@@ -67,6 +98,10 @@ export interface InviteVerificationResponse {
   email: string;
   role: string;
   position?: string | null;
+  departmentId?: string | null;
+  positionId?: string | null;
+  salaryRate?: string | null;
+  status?: string | null;
   expiresAt: string;
   message: string;
 }
@@ -75,6 +110,26 @@ export interface CompleteInviteRegistrationPayload {
   code: string;
   password: string;
   phoneNumber: string;
+}
+
+export interface GenerateInvitePayload {
+  organizationId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  departmentId?: string;
+  positionId?: string;
+  position?: string;
+}
+
+export interface GenerateInviteResponse {
+  inviteId: string;
+  organizationId: string;
+  organizationName: string;
+  email: string;
+  code: string;
+  expiresAt: string;
 }
 
 export interface NotificationItem {
@@ -142,6 +197,314 @@ export interface UserProfileResponse {
   position: string;
   salary: string;
   location: string;
+}
+
+export interface LegalDocumentItem {
+  id: string;
+  documentType: string;
+  title?: string;
+  url: string;
+  isActive?: boolean;
+}
+
+export interface DepartmentItem {
+  id: string;
+  name: string;
+}
+
+export interface PositionItem {
+  id: string;
+  name: string;
+}
+
+const extractCollection = (payload: unknown): unknown[] => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  if (Array.isArray(record.items)) {
+    return record.items;
+  }
+
+  if (Array.isArray(record.data)) {
+    return record.data;
+  }
+
+  if (Array.isArray(record.content)) {
+    return record.content;
+  }
+
+  if (Array.isArray(record.results)) {
+    return record.results;
+  }
+
+  if (Array.isArray(record.rows)) {
+    return record.rows;
+  }
+
+  if (record.data) {
+    return extractCollection(record.data);
+  }
+
+  if (record.result) {
+    return extractCollection(record.result);
+  }
+
+  if (record.payload) {
+    return extractCollection(record.payload);
+  }
+
+  return [];
+};
+
+const normalizeReferenceItem = (
+  item: unknown,
+): { id: string; name: string } | null => {
+  if (typeof item === "string" && item.trim()) {
+    return {
+      id: item.trim(),
+      name: item.trim(),
+    };
+  }
+
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const record = item as Record<string, unknown>;
+  const id =
+    record.id ??
+    record.departmentId ??
+    record.positionId ??
+    record.department_id ??
+    record.position_id ??
+    record.uuid ??
+    record.value ??
+    record.code;
+  const name =
+    record.name ??
+    record.title ??
+    record.departmentName ??
+    record.positionName ??
+    record.department_name ??
+    record.position_name ??
+    record.label ??
+    record.displayName ??
+    record.display_name ??
+    record.description;
+
+  if (typeof id !== "string" && typeof id !== "number") {
+    return null;
+  }
+
+  if (typeof name !== "string" || !name.trim()) {
+    return null;
+  }
+
+  return {
+    id: String(id),
+    name: name.trim(),
+  };
+};
+
+const getStringValue = (
+  record: Record<string, unknown>,
+  keys: string[],
+): string => {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+
+  return "";
+};
+
+const getOptionalStringValue = (
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined => {
+  const value = getStringValue(record, keys);
+  return value || undefined;
+};
+
+export const normalizeUserProfile = (payload: unknown): UserProfileResponse => {
+  const record =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : {};
+
+  const firstname = getStringValue(record, [
+    "firstname",
+    "firstName",
+    "first_name",
+    "givenName",
+  ]);
+  const lastname = getStringValue(record, [
+    "lastname",
+    "lastName",
+    "last_name",
+    "familyName",
+  ]);
+  const email = getStringValue(record, ["email", "emailAddress", "email_address"]);
+  const department = getStringValue(record, [
+    "department",
+    "departmentName",
+    "department_name",
+  ]);
+  const position = getStringValue(record, [
+    "position",
+    "positionName",
+    "position_name",
+    "jobTitle",
+    "job_title",
+  ]);
+  const phone = getStringValue(record, ["phone", "phoneNumber", "phone_number"]);
+  const fullName =
+    getStringValue(record, ["fullName", "full_name", "name"]) ||
+    [firstname, lastname].filter(Boolean).join(" ").trim();
+
+  return {
+    id: getStringValue(record, ["id", "userId", "user_id"]),
+    organizationId: getStringValue(record, [
+      "organizationId",
+      "organization_id",
+      "orgId",
+      "org_id",
+    ]),
+    organizationName: getStringValue(record, [
+      "organizationName",
+      "organization_name",
+      "orgName",
+      "org_name",
+    ]),
+    email,
+    firstname,
+    lastname,
+    fullName: fullName || email,
+    role: getStringValue(record, ["role", "userRole", "user_role"]),
+    phone,
+    phoneNumber: phone,
+    verificationStatus: getStringValue(record, [
+      "verificationStatus",
+      "verification_status",
+      "status",
+    ]),
+    joinedDate: getStringValue(record, [
+      "joinedDate",
+      "joined_date",
+      "createdAt",
+      "created_at",
+      "hireDate",
+      "hire_date",
+    ]),
+    department,
+    departmentId: getOptionalStringValue(record, [
+      "departmentId",
+      "department_id",
+    ]),
+    position,
+    salary: getStringValue(record, ["salary", "salaryRate", "salary_rate"]),
+    location: getStringValue(record, [
+      "location",
+      "workLocation",
+      "work_location",
+      "officeLocation",
+      "office_location",
+    ]),
+  };
+};
+
+const getWithFallback = async <T>(endpoints: string[]) => {
+  let lastError: AxiosError | Error | null = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await api.get<T>(endpoint);
+      return response.data;
+    } catch (error) {
+      lastError = error as AxiosError | Error;
+
+      if (!isNotFoundError(error)) {
+        break;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Request failed");
+};
+
+export interface SubmitConsentsPayload {
+  privacyPolicyAccepted: boolean;
+  termsAndConditionsAccepted: boolean;
+}
+
+export interface ValidateConsentsResponse {
+  valid?: boolean;
+  isValid?: boolean;
+  [key: string]: unknown;
+}
+
+export interface EmployeeItem {
+  id: string;
+  orgId: string;
+  userId: string;
+  departmentId: string;
+  positionId: string;
+  role: string;
+  salaryRate: string;
+  status: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  departmentName: string;
+  positionName: string;
+}
+
+export interface CreateEmployeePayload {
+  userId: string;
+  departmentId: string;
+  positionId: string;
+  role: string;
+  salaryRate: string;
+  status: string;
+}
+
+export interface CreateEmployeeResponse {
+  employeeId: string;
+}
+
+export interface UpdateEmployeeRolePayload {
+  role: string;
+}
+
+export interface UpdateEmployeeSalaryPayload {
+  salaryRate: string;
+}
+
+export interface UpdateEmployeeStatusPayload {
+  status: string;
+}
+
+export interface UpdateEmployeeDepartmentPayload {
+  departmentId: string;
+}
+
+export interface UpdateEmployeePositionPayload {
+  positionId: string;
 }
 
 const loginEndpoints = ["/auth/login", "/auth/sign-in", "/login", "/signin"];
@@ -388,10 +751,16 @@ const isNotFoundError = (error: unknown) =>
 
 export const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (!axios.isAxiosError(error)) {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message;
+    }
+
     return fallback;
   }
 
   const responseData = error.response?.data;
+  const status = error.response?.status;
+  const requestUrl = error.config?.url;
 
   if (typeof responseData === "string" && responseData.trim()) {
     return responseData;
@@ -407,6 +776,14 @@ export const getApiErrorMessage = (error: unknown, fallback: string) => {
 
   if (responseData?.details) {
     return responseData.details;
+  }
+
+  if (status && requestUrl) {
+    return `${fallback} (${status} ${requestUrl})`;
+  }
+
+  if (status) {
+    return `${fallback} (HTTP ${status})`;
   }
 
   return fallback;
@@ -439,11 +816,66 @@ export const organizationApi = {
   create: (data: unknown) => api.post("/organizations", data),
   verifyOtp: (email: string, code: string) =>
     api.post("/organizations/verify-otp", { email, code }),
-  getDocs: () => api.get("/legal/documents"),
-  getActiveDocuments: () => api.get("/legal/documents"),
+  submitConsents: async (payload: SubmitConsentsPayload) => {
+    try {
+      const response = await api.post("/organizations/consents", payload);
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to submit consents"));
+    }
+  },
+  validateConsents: async (organizationId: string) => {
+    try {
+      const response = await api.get<ValidateConsentsResponse>(
+        "/organizations/consents/validate",
+        {
+          params: { organizationId },
+        },
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to validate consents"));
+    }
+  },
+  getDocs: () => api.get<LegalDocumentItem[]>("/legal/documents"),
+  getActiveDocuments: () => api.get<LegalDocumentItem[]>("/legal/documents"),
+};
+
+export const referenceApi = {
+  listDepartments: async () => {
+    try {
+      const data = await getWithFallback<unknown>(DEPARTMENTS_ENDPOINTS);
+      return extractCollection(data)
+        .map(normalizeReferenceItem)
+        .filter((item): item is DepartmentItem => item !== null);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load departments"));
+    }
+  },
+  listPositions: async () => {
+    try {
+      const data = await getWithFallback<unknown>(POSITIONS_ENDPOINTS);
+      return extractCollection(data)
+        .map(normalizeReferenceItem)
+        .filter((item): item is PositionItem => item !== null);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load positions"));
+    }
+  },
 };
 
 export const inviteApi = {
+  generate: async (payload: GenerateInvitePayload) => {
+    try {
+      const response = await api.post<GenerateInviteResponse>(
+        "/invites/generate",
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to generate invite"));
+    }
+  },
   verify: async (code: string) => {
     try {
       const response = await api.post<InviteVerificationResponse>(
@@ -516,10 +948,90 @@ export const notificationsApi = {
 export const profileApi = {
   getMe: async () => {
     try {
-      const response = await api.get<UserProfileResponse>("/profile/me");
-      return response.data;
+      const response = await api.get<unknown>("/profile/me");
+      return normalizeUserProfile(response.data);
     } catch (error) {
       throw new Error(getApiErrorMessage(error, "Failed to load profile"));
+    }
+  },
+};
+
+export const employeesApi = {
+  create: async (payload: CreateEmployeePayload) => {
+    try {
+      const response = await api.post<CreateEmployeeResponse>(
+        "/employees",
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to create employee"));
+    }
+  },
+  list: async () => {
+    try {
+      const response = await api.get<EmployeeItem[]>("/employees");
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load employees"));
+    }
+  },
+  getById: async (id: string) => {
+    try {
+      const response = await api.get<EmployeeItem>(`/employees/${id}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to load employee"));
+    }
+  },
+  updateRole: async (id: string, payload: UpdateEmployeeRolePayload) => {
+    try {
+      await api.patch(`/employees/${id}/role`, payload);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to update role"));
+    }
+  },
+  updateSalary: async (id: string, payload: UpdateEmployeeSalaryPayload) => {
+    try {
+      await api.patch(`/employees/${id}/salary`, payload);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to update salary"));
+    }
+  },
+  updateStatus: async (id: string, payload: UpdateEmployeeStatusPayload) => {
+    try {
+      await api.patch(`/employees/${id}/status`, payload);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to update status"));
+    }
+  },
+  updateDepartment: async (
+    id: string,
+    payload: UpdateEmployeeDepartmentPayload,
+  ) => {
+    try {
+      await api.patch(`/employees/${id}/department`, payload);
+    } catch (error) {
+      throw new Error(
+        getApiErrorMessage(error, "Failed to update department"),
+      );
+    }
+  },
+  updatePosition: async (
+    id: string,
+    payload: UpdateEmployeePositionPayload,
+  ) => {
+    try {
+      await api.patch(`/employees/${id}/position`, payload);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to update position"));
+    }
+  },
+  delete: async (id: string) => {
+    try {
+      await api.delete(`/employees/${id}`);
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, "Failed to delete employee"));
     }
   },
 };

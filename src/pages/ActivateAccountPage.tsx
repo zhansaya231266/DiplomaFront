@@ -2,13 +2,40 @@ import { useEffect, useState } from "react";
 import { Mail, Eye, EyeOff, ChevronLeft, Loader2, Phone } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  authApi,
+  clearStoredAuth,
+  employeesApi,
+  getApiErrorMessage,
   inviteApi,
+  persistAuth,
+  profileApi,
   type InviteVerificationResponse,
 } from "../api";
+import {
+  getInviteEmployeeDraft,
+  removeInviteEmployeeDraft,
+} from "../shared/utils/inviteEmployeeDraft";
 
 type ActivateAccountState = {
   code: string;
   invite: InviteVerificationResponse;
+};
+
+const VERIFIED_INVITE_STORAGE_KEY = "verified_invite";
+
+const getStoredInviteState = (): ActivateAccountState | null => {
+  const raw = sessionStorage.getItem(VERIFIED_INVITE_STORAGE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as ActivateAccountState;
+  } catch {
+    sessionStorage.removeItem(VERIFIED_INVITE_STORAGE_KEY);
+    return null;
+  }
 };
 
 export const ActivateAccountPage = () => {
@@ -18,21 +45,34 @@ export const ActivateAccountPage = () => {
   const [phoneNumber, setPhoneNumber] = useState("+7");
   const [apiError, setApiError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [inviteState, setInviteState] = useState<ActivateAccountState | null>(
+    null,
+  );
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as ActivateAccountState | null;
 
   useEffect(() => {
-    if (!state?.code || !state?.invite) {
-      navigate("/enter-code", { replace: true });
-    }
-  }, [navigate, state]);
+    const routeState = location.state as ActivateAccountState | null;
+    const nextState =
+      routeState?.code && routeState?.invite ? routeState : getStoredInviteState();
 
-  if (!state?.code || !state?.invite) {
+    if (!nextState?.code || !nextState?.invite) {
+      navigate("/enter-code", { replace: true });
+      return;
+    }
+
+    sessionStorage.setItem(
+      VERIFIED_INVITE_STORAGE_KEY,
+      JSON.stringify(nextState),
+    );
+    setInviteState(nextState);
+  }, [location.state, navigate]);
+
+  if (!inviteState?.code || !inviteState?.invite) {
     return null;
   }
 
-  const { code, invite } = state;
+  const { code, invite } = inviteState;
 
   const handleSubmit = async () => {
     if (password !== confirmPassword) {
@@ -49,40 +89,78 @@ export const ActivateAccountPage = () => {
         password,
         phoneNumber,
       });
+
+      const inviteDraft =
+        getInviteEmployeeDraft({ code, email: invite.email }) ||
+        (invite.departmentId && invite.positionId
+          ? {
+              code,
+              email: invite.email,
+              departmentId: invite.departmentId,
+              positionId: invite.positionId,
+              role: invite.role,
+              salaryRate: invite.salaryRate || "0",
+              status: invite.status || "Active",
+            }
+          : null);
+
+      if (inviteDraft) {
+        const { token, user, refreshToken } = await authApi.login({
+          email: invite.email,
+          password,
+        });
+
+        persistAuth(token, user, refreshToken);
+
+        try {
+          const profile = await profileApi.getMe();
+
+          await employeesApi.create({
+            userId: profile.id,
+            departmentId: inviteDraft.departmentId,
+            positionId: inviteDraft.positionId,
+            role: inviteDraft.role,
+            salaryRate: inviteDraft.salaryRate,
+            status: inviteDraft.status,
+          });
+        } finally {
+          clearStoredAuth();
+        }
+
+        removeInviteEmployeeDraft({ code, email: invite.email });
+      }
+
+      sessionStorage.removeItem(VERIFIED_INVITE_STORAGE_KEY);
       navigate("/login");
     } catch (error) {
-      setApiError(
-        error instanceof Error
-          ? error.message
-          : "Failed to activate account",
-      );
+      setApiError(getApiErrorMessage(error, "Failed to activate account"));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center py-12 px-4">
-      <div className="max-w-md w-full">
+    <div className="flex min-h-screen flex-col items-center bg-gray-50 px-4 py-12 dark:bg-gray-950">
+      <div className="w-full max-w-md">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-500 mb-8 font-medium"
+          className="mb-8 flex items-center gap-2 font-medium text-gray-500"
         >
           <ChevronLeft size={20} /> Back
         </button>
 
-        <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 shadow-xl border border-gray-100 dark:border-gray-800">
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-green-50 dark:bg-green-900/20 rounded-full flex items-center justify-center text-green-500">
+        <div className="rounded-[2.5rem] border border-gray-100 bg-white p-10 shadow-xl dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-6 flex justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-500 dark:bg-green-900/20">
               <Mail size={32} />
             </div>
           </div>
 
-          <div className="text-center mb-10">
+          <div className="mb-10 text-center">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
               Activate Your Account
             </h2>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="mt-2 text-sm text-gray-500">
               You&apos;re joining{" "}
               <span className="font-bold text-gray-900 dark:text-white">
                 {invite.organizationName}
@@ -90,12 +168,12 @@ export const ActivateAccountPage = () => {
             </p>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-5 mb-8 border border-gray-100 dark:border-gray-700">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
+          <div className="mb-8 rounded-2xl border border-gray-100 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-800/50">
+            <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
               Employee Information
             </p>
             <div className="space-y-1">
-              <p className="font-bold text-gray-900 dark:text-white text-lg leading-tight">
+              <p className="text-lg font-bold leading-tight text-gray-900 dark:text-white">
                 {invite.fullName}
               </p>
               <p className="text-sm text-gray-500">{invite.email}</p>
@@ -105,9 +183,9 @@ export const ActivateAccountPage = () => {
             </div>
           </div>
 
-          <div className="space-y-5 mb-8">
+          <div className="mb-8 space-y-5">
             <div className="relative">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                 Phone Number
               </label>
               <Phone
@@ -116,46 +194,47 @@ export const ActivateAccountPage = () => {
               />
               <input
                 value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                className="w-full pl-11 pr-5 py-3.5 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                onChange={(event) => setPhoneNumber(event.target.value)}
+                className="w-full rounded-xl border border-gray-200 py-3.5 pl-11 pr-5 outline-none transition-all focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 placeholder="+77001234567"
               />
             </div>
 
             <div className="relative">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                 Create Password
               </label>
               <input
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 type={showPass ? "text" : "password"}
-                className="w-full px-5 py-3.5 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full rounded-xl border border-gray-200 px-5 py-3.5 outline-none transition-all focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 placeholder="Create a strong password"
               />
               <button
                 type="button"
-                onClick={() => setShowPass(!showPass)}
+                onClick={() => setShowPass((prev) => !prev)}
                 className="absolute right-4 top-[42px] text-gray-400 hover:text-blue-600"
               >
                 {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              <label className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                 Confirm Password
               </label>
               <input
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={(event) => setConfirmPassword(event.target.value)}
                 type="password"
-                className="w-full px-5 py-3.5 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full rounded-xl border border-gray-200 px-5 py-3.5 outline-none transition-all focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 placeholder="Confirm your password"
               />
             </div>
           </div>
 
-          <p className="text-xs text-gray-400 mb-6">
+          <p className="mb-6 text-xs text-gray-400">
             Password must be at least 8 characters and include a special
             character. Phone number should be in international format, for
             example `+77001234567`.
@@ -175,7 +254,7 @@ export const ActivateAccountPage = () => {
               !confirmPassword ||
               !phoneNumber.trim()
             }
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-500/25 hover:bg-blue-700 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting ? (
               <>

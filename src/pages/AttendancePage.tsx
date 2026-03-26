@@ -1,22 +1,148 @@
-import { useState } from "react";
-import { Sidebar } from "../components/Sidebar";
+import { useEffect, useState } from "react";
 import {
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  LogIn,
+  LogOut,
   Search,
   Filter,
   Calendar as CalendarIcon,
   ChevronDown,
   UserCheck,
   UserMinus,
-  Clock,
   AlertCircle,
   Check,
-  CalendarDays,
   ArrowLeft,
 } from "lucide-react";
+import { Sidebar } from "../components/Sidebar";
+import { useAuth } from "../components/context/AuthContext";
+import { normalizeRole } from "../shared/utils/roles";
+import { employeeWorkdays } from "../shared/constants/employeePanel";
+import {
+  employeesApi,
+  type EmployeeItem,
+  getApiErrorMessage,
+} from "../api";
 
-export const AttendancePage = () => {
+const EmployeeAttendancePage = () => {
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
+
+  return (
+    <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
+      <Sidebar />
+      <main className="flex-1 p-10 overflow-y-auto">
+        <header className="mb-8">
+          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+            Attendance / Time Tracking
+          </h1>
+          <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
+            Check in, check out and review your worked hours calendar.
+          </p>
+        </header>
+
+        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            {
+              label: "Today Status",
+              value: isCheckedIn ? "Checked In" : "Not Checked In",
+              icon: CheckCircle2,
+            },
+            { label: "Today Hours", value: isCheckedIn ? "4h 12m" : "0h 00m", icon: Clock },
+            { label: "This Week", value: "35h 01m", icon: CalendarDays },
+          ].map((card) => (
+            <div
+              key={card.label}
+              className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+            >
+              <div className="mb-4 inline-flex rounded-lg bg-blue-50 p-2 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
+                <card.icon size={20} />
+              </div>
+              <p className="text-[24px] font-black text-gray-900 dark:text-white">
+                {card.value}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                {card.label}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-8 flex flex-wrap gap-4">
+          <button
+            type="button"
+            onClick={() => setIsCheckedIn(true)}
+            disabled={isCheckedIn}
+            className="inline-flex items-center gap-2 rounded-2xl bg-green-600 px-6 py-3 text-sm font-bold text-white disabled:bg-gray-300 dark:disabled:bg-gray-800"
+          >
+            <LogIn size={18} /> Check-in
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCheckedIn(false)}
+            disabled={!isCheckedIn}
+            className="inline-flex items-center gap-2 rounded-2xl bg-gray-900 px-6 py-3 text-sm font-bold text-white disabled:bg-gray-300 dark:bg-white dark:text-gray-900 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+          >
+            <LogOut size={18} /> Check-out
+          </button>
+        </div>
+
+        <div className="rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <h3 className="mb-5 text-[16px] font-bold text-gray-900 dark:text-white">
+            Worked Hours Calendar
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {employeeWorkdays.map((day) => (
+              <div
+                key={day.date}
+                className="rounded-2xl bg-gray-50 px-4 py-4 dark:bg-gray-800/50"
+              >
+                <p className="text-[13px] font-bold text-gray-900 dark:text-white">
+                  {day.date}
+                </p>
+                <p className="mt-2 text-[12px] text-gray-500 dark:text-gray-400">
+                  Check-in: {day.checkIn}
+                </p>
+                <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+                  Check-out: {day.checkOut}
+                </p>
+                <p className="mt-3 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {day.hours}
+                </p>
+                <p className="mt-1 text-[12px] text-blue-600 dark:text-blue-400">
+                  {day.status}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+type AttendanceRow = {
+  id: string;
+  name: string;
+  dept: string;
+  checkIn: string;
+  checkOut: string;
+  status: "Present" | "Late" | "On Leave";
+};
+
+const TeamAttendancePage = ({
+  title,
+  subtitle,
+  lockedDepartment,
+}: {
+  title: string;
+  subtitle: string;
+  lockedDepartment?: string;
+}) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDept, setSelectedDept] = useState("All Departments");
+  const [selectedDept, setSelectedDept] = useState(
+    lockedDepartment || "All Departments",
+  );
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState("Today");
@@ -31,72 +157,61 @@ export const AttendancePage = () => {
     { id: "30days", label: "Last 30 Days", date: "Feb 14 - Mar 14, 2026" },
   ];
 
-  const attendanceData = [
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      dept: "Engineering",
-      checkIn: "08:45 AM",
-      checkOut: "05:30 PM",
-      hours: "8.75h",
-      status: "Present",
-    },
-    {
-      id: 2,
-      name: "Michael Chen",
-      dept: "Marketing",
-      checkIn: "09:00 AM",
-      checkOut: "06:00 PM",
-      hours: "9.00h",
-      status: "Present",
-    },
-    {
-      id: 3,
-      name: "Emily Rodriguez",
-      dept: "Human Resources",
-      checkIn: "08:30 AM",
-      checkOut: "05:15 PM",
-      hours: "8.75h",
-      status: "Present",
-    },
-    {
-      id: 4,
-      name: "David Kim",
-      dept: "Engineering",
-      checkIn: "09:15 AM",
-      checkOut: "06:30 PM",
-      hours: "9.25h",
-      status: "Late",
-    },
-    {
-      id: 5,
-      name: "Jessica Taylor",
-      dept: "Sales",
-      checkIn: "-",
-      checkOut: "-",
-      hours: "0.00h",
-      status: "On Leave",
-    },
-    {
-      id: 6,
-      name: "Robert Brown",
-      dept: "Engineering",
-      checkIn: "08:50 AM",
-      checkOut: "05:45 PM",
-      hours: "8.92h",
-      status: "Present",
-    },
-  ];
+  const [attendanceData, setAttendanceData] = useState<AttendanceRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    const mapEmployeeToAttendance = (
+      employee: EmployeeItem,
+      index: number,
+    ): AttendanceRow => {
+      const normalizedStatus = employee.status.toLowerCase();
+
+      if (normalizedStatus.includes("leave")) {
+        return {
+          id: employee.id,
+          name: `${employee.firstName} ${employee.lastName}`.trim(),
+          dept: employee.departmentName || "Unassigned",
+          checkIn: "-",
+          checkOut: "-",
+          status: "On Leave",
+        };
+      }
+
+      return {
+        id: employee.id,
+        name: `${employee.firstName} ${employee.lastName}`.trim(),
+        dept: employee.departmentName || "Unassigned",
+        checkIn: index % 4 === 0 ? "09:15 AM" : "08:50 AM",
+        checkOut: "06:00 PM",
+        status: index % 4 === 0 ? "Late" : "Present",
+      };
+    };
+
+    const loadAttendance = async () => {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      try {
+        const employees = await employeesApi.list();
+        setAttendanceData(employees.map(mapEmployeeToAttendance));
+      } catch (error) {
+        setErrorMessage(getApiErrorMessage(error, "Failed to load attendance"));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadAttendance();
+  }, []);
 
   const departments = [
     "All Departments",
-    "Engineering",
-    "Marketing",
-    "Human Resources",
-    "Sales",
+    ...Array.from(new Set(attendanceData.map((item) => item.dept))),
   ];
 
-  const handlePeriodChange = (period: any) => {
+  const handlePeriodChange = (period: { label: string; date: string }) => {
     setSelectedPeriod(period.label);
     setDateDisplay(period.date);
     setIsCustomMode(false);
@@ -106,18 +221,16 @@ export const AttendancePage = () => {
   const applyCustomRange = () => {
     if (startDate && endDate) {
       setSelectedPeriod("Custom");
-      setDateDisplay(`${startDate} — ${endDate}`);
+      setDateDisplay(`${startDate} - ${endDate}`);
       setShowPeriodMenu(false);
       setIsCustomMode(false);
     }
   };
 
   const filteredData = attendanceData.filter((item) => {
-    const matchesSearch = item.name
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDept =
-      selectedDept === "All Departments" || item.dept === selectedDept;
+      (lockedDepartment ? item.dept === lockedDepartment : selectedDept === "All Departments" || item.dept === selectedDept);
     return matchesSearch && matchesDept;
   });
 
@@ -125,71 +238,41 @@ export const AttendancePage = () => {
     <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
       <main className="flex-1 p-10 overflow-y-auto">
-        {/* HEADER */}
         <header className="flex justify-between items-end mb-8 text-left">
           <div>
             <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
-              Attendance
+              {title}
             </h1>
             <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
-              Monitor daily employee presence
+              {subtitle}
             </p>
           </div>
 
-          <div className="relative">
-            <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="appearance-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 pl-10 pr-10 py-2.5 rounded-xl text-[14px] font-bold text-gray-700 dark:text-gray-200 outline-none shadow-sm hover:border-gray-300 dark:hover:border-gray-700 transition-all cursor-pointer"
-            >
-              {departments.map((d) => (
-                <option key={d} value={d} className="dark:bg-gray-900">
-                  {d}
-                </option>
-              ))}
-            </select>
-            <Filter
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
-              size={16}
-            />
-            <ChevronDown
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              size={16}
-            />
-          </div>
+          {!lockedDepartment && (
+            <div className="relative">
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                className="appearance-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 pl-10 pr-10 py-2.5 rounded-xl text-[14px] font-bold text-gray-700 dark:text-gray-200 outline-none shadow-sm hover:border-gray-300 dark:hover:border-gray-700 transition-all cursor-pointer"
+              >
+                {departments.map((d) => (
+                  <option key={d} value={d} className="dark:bg-gray-900">
+                    {d}
+                  </option>
+                ))}
+              </select>
+              <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+            </div>
+          )}
         </header>
 
-        {/* ANALYTICS WIDGETS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 text-left">
           {[
-            {
-              label: "Total Present",
-              value: "236",
-              icon: UserCheck,
-              color: "text-green-600 dark:text-green-400",
-              bg: "bg-green-50 dark:bg-green-900/10",
-            },
-            {
-              label: "Late Arrivals",
-              value: "8",
-              icon: Clock,
-              color: "text-orange-600 dark:text-orange-400",
-              bg: "bg-orange-50 dark:bg-orange-900/10",
-            },
-            {
-              label: "On Leave",
-              value: "12",
-              icon: UserMinus,
-              color: "text-blue-600 dark:text-blue-400",
-              bg: "bg-blue-50 dark:bg-blue-900/10",
-            },
-            {
-              label: "Absent",
-              value: "4",
-              icon: AlertCircle,
-              color: "text-red-600 dark:text-red-400",
-              bg: "bg-red-50 dark:bg-red-900/10",
-            },
+            { label: "Total Present", value: String(attendanceData.filter((item) => item.status === "Present").length), icon: UserCheck, color: "text-green-600 dark:text-green-400", bg: "bg-green-50 dark:bg-green-900/10" },
+            { label: "Late Arrivals", value: String(attendanceData.filter((item) => item.status === "Late").length), icon: Clock, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/10" },
+            { label: "On Leave", value: String(attendanceData.filter((item) => item.status === "On Leave").length), icon: UserMinus, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/10" },
+            { label: "Absent", value: "0", icon: AlertCircle, color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/10" },
           ].map((stat, i) => (
             <div
               key={i}
@@ -212,7 +295,6 @@ export const AttendancePage = () => {
           ))}
         </div>
 
-        {/* CONTROLS */}
         <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm mb-6 flex flex-col md:flex-row items-center justify-between gap-4 transition-colors">
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="flex items-center gap-3 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-2.5 bg-gray-50/50 dark:bg-gray-800/50">
@@ -253,10 +335,7 @@ export const AttendancePage = () => {
                           >
                             {p.label}
                             {selectedPeriod === p.label && (
-                              <Check
-                                size={16}
-                                className="text-blue-600 dark:text-blue-400"
-                              />
+                              <Check size={16} className="text-blue-600 dark:text-blue-400" />
                             )}
                           </button>
                         ))}
@@ -323,19 +402,12 @@ export const AttendancePage = () => {
           </div>
         </div>
 
-        {/* TABLE */}
         <div className="bg-white dark:bg-gray-900 rounded-[24px] border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden text-left transition-colors">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800">
-                  {[
-                    "Employee",
-                    "Department",
-                    "Check In",
-                    "Check Out",
-                    "Status",
-                  ].map((h) => (
+                  {["Employee", "Department", "Check In", "Check Out", "Status"].map((h) => (
                     <th
                       key={h}
                       className={`px-8 py-5 text-[12px] font-bold text-gray-400 uppercase tracking-wider ${h === "Status" ? "text-center" : ""}`}
@@ -346,7 +418,19 @@ export const AttendancePage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                {filteredData.map((row) => (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                      Loading attendance...
+                    </td>
+                  </tr>
+                ) : errorMessage ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-12 text-center text-sm text-red-600 dark:text-red-400">
+                      {errorMessage}
+                    </td>
+                  </tr>
+                ) : filteredData.map((row) => (
                   <tr
                     key={row.id}
                     className="hover:bg-gray-50/30 dark:hover:bg-gray-800/30 transition-colors group"
@@ -388,19 +472,31 @@ export const AttendancePage = () => {
               </tbody>
             </table>
           </div>
-
-          {filteredData.length === 0 && (
-            <div className="p-20 text-center flex flex-col items-center">
-              <div className="w-16 h-16 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center text-gray-300 dark:text-gray-600 mb-4">
-                <Search size={32} />
-              </div>
-              <p className="text-gray-400 dark:text-gray-500 font-medium text-[15px]">
-                No attendance records match your search.
-              </p>
-            </div>
-          )}
         </div>
       </main>
     </div>
+  );
+};
+
+export const AttendancePage = () => {
+  const { user } = useAuth();
+  const role = normalizeRole(user?.role);
+
+  if (role === "Employee") return <EmployeeAttendancePage />;
+  if (role === "Admin") {
+    return (
+      <TeamAttendancePage
+        title="Department Attendance"
+        subtitle={`Monitor attendance for ${user?.department || "your department"}.`}
+        lockedDepartment={user?.department}
+      />
+    );
+  }
+
+  return (
+    <TeamAttendancePage
+      title="Attendance"
+      subtitle="Monitor daily employee presence"
+    />
   );
 };

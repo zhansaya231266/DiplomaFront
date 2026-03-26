@@ -1,23 +1,16 @@
 import React, { useEffect, useState } from "react";
-import {
-  User,
-  Briefcase,
-  Building2,
-  MapPin,
-  Calendar,
-  LogOut,
-  Phone,
-  Wallet,
-  Mail,
-} from "lucide-react";
+import { User, Briefcase, Building2, MapPin, Calendar, LogOut, Phone, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
 import { profileApi, type UserProfileResponse } from "../api";
 import { useAuth } from "../components/context/AuthContext";
+import { normalizeRole } from "../shared/utils/roles";
+
+const EMPTY_VALUE_LABEL = "Not set";
 
 const formatJoinedDate = (value?: string) => {
   if (!value) {
-    return "Not specified";
+    return EMPTY_VALUE_LABEL;
   }
 
   const date = new Date(value);
@@ -30,7 +23,7 @@ const formatJoinedDate = (value?: string) => {
 
 const formatSalary = (value?: string) => {
   if (!value) {
-    return "Not specified";
+    return EMPTY_VALUE_LABEL;
   }
 
   const amount = Number(value);
@@ -60,24 +53,7 @@ export const ProfilePage = () => {
       try {
         const response = await profileApi.getMe();
         setProfile(response);
-        setUser({
-          firstname: response.firstname,
-          lastname: response.lastname,
-          email: response.email,
-          role: response.role,
-          fullName: response.fullName,
-          phone: response.phone,
-          phoneNumber: response.phoneNumber,
-          verificationStatus: response.verificationStatus,
-          joinedDate: response.joinedDate,
-          department: response.department,
-          departmentId: response.departmentId,
-          position: response.position,
-          salary: response.salary,
-          location: response.location,
-          organizationId: response.organizationId,
-          organizationName: response.organizationName,
-        });
+        setUser(response);
       } catch (loadError) {
         setError(
           loadError instanceof Error
@@ -100,17 +76,45 @@ export const ProfilePage = () => {
     profile?.email ||
     user?.email ||
     "User";
+  const role = normalizeRole(profile?.role || user?.role);
+  const normalizedRole = (profile?.role || user?.role || "EMPLOYEE").toUpperCase();
+  const isSuperAdmin = role === "SuperAdmin";
+  const getDisplayValue = (value?: string | null) =>
+    value && value.trim() ? value : EMPTY_VALUE_LABEL;
 
   const userData = {
     email: profile?.email || user?.email || "No email",
-    role: profile?.role || user?.role || "EMPLOYEE",
-    position: profile?.position || "Not specified",
-    department: profile?.department || "Not specified",
+    role: normalizedRole,
+    position: getDisplayValue(profile?.position),
+    department: getDisplayValue(profile?.department),
     joinedDate: formatJoinedDate(profile?.joinedDate),
     salary: formatSalary(profile?.salary),
-    phone: profile?.phone || profile?.phoneNumber || "Not specified",
-    location: profile?.location || "Not specified",
+    phone: getDisplayValue(profile?.phone || profile?.phoneNumber),
+    location: getDisplayValue(profile?.location),
   };
+
+  const personalInfoItems = [
+    {
+      icon: <Mail />,
+      label: "Email Address",
+      value: userData.email,
+    },
+    {
+      icon: <Phone />,
+      label: "Phone Number",
+      value: userData.phone,
+    },
+    {
+      icon: <Calendar />,
+      label: "Joining Date",
+      value: userData.joinedDate,
+    },
+    {
+      icon: <MapPin />,
+      label: "Work Location",
+      value: userData.location,
+    },
+  ].filter((item) => !isSuperAdmin || item.value !== EMPTY_VALUE_LABEL);
 
   const handleLogout = () => {
     logout();
@@ -139,6 +143,9 @@ export const ProfilePage = () => {
             </div>
 
             <div className="flex-1 text-center md:text-left relative z-10">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.25em] text-blue-600 dark:text-blue-400">
+                {isSuperAdmin ? "Profile" : "My Profile"}
+              </p>
               <div className="flex flex-col md:flex-row md:items-center gap-4 mb-3">
                 <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">
                   {isLoading ? "Loading profile..." : fullName}
@@ -148,14 +155,18 @@ export const ProfilePage = () => {
                 </span>
               </div>
               <div className="flex flex-wrap justify-center md:justify-start gap-6 text-gray-500 font-bold text-sm">
-                <span className="flex items-center gap-2">
-                  <Briefcase size={16} className="text-blue-500" />
-                  {userData.position}
-                </span>
-                <span className="flex items-center gap-2">
-                  <Building2 size={16} className="text-blue-500" />
-                  {userData.department}
-                </span>
+                {(!isSuperAdmin || userData.position !== EMPTY_VALUE_LABEL) && (
+                  <span className="flex items-center gap-2">
+                    <Briefcase size={16} className="text-blue-500" />
+                    {userData.position}
+                  </span>
+                )}
+                {(!isSuperAdmin || userData.department !== EMPTY_VALUE_LABEL) && (
+                  <span className="flex items-center gap-2">
+                    <Building2 size={16} className="text-blue-500" />
+                    {userData.department}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -171,61 +182,69 @@ export const ProfilePage = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+          <div className={`grid grid-cols-1 ${isSuperAdmin ? "" : "lg:grid-cols-2"} gap-8 items-stretch`}>
             <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col">
               <h3 className="text-xl font-black text-gray-900 dark:text-white mb-10 flex items-center gap-4">
                 Personal Info
                 <div className="h-px flex-1 bg-gray-50 dark:bg-gray-800" />
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
-                <ProfileItem
-                  icon={<Mail />}
-                  label="Email Address"
-                  value={userData.email}
-                />
-                <ProfileItem
-                  icon={<Phone />}
-                  label="Phone Number"
-                  value={userData.phone}
-                />
-                <ProfileItem
-                  icon={<Calendar />}
-                  label="Joining Date"
-                  value={userData.joinedDate}
-                />
-                <ProfileItem
-                  icon={<MapPin />}
-                  label="Work Location"
-                  value={userData.location}
-                />
+                {personalInfoItems.map((item) => (
+                  <ProfileItem
+                    key={item.label}
+                    icon={item.icon}
+                    label={item.label}
+                    value={item.value}
+                  />
+                ))}
               </div>
             </div>
 
+            {!isSuperAdmin && (
             <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 shadow-sm border border-gray-100 dark:border-gray-800 flex flex-col">
               <h3 className="text-xl font-black text-gray-900 dark:text-white mb-10 flex items-center gap-4">
-                Financials
+                Current Position
                 <div className="h-px flex-1 bg-gray-50 dark:bg-gray-800" />
               </h3>
               <div className="flex-1 flex flex-col justify-center">
-                <div className="p-10 bg-blue-600 rounded-[2.5rem] text-white shadow-2xl shadow-blue-600/30 relative overflow-hidden group">
-                  <Wallet className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 group-hover:scale-110 transition-transform duration-700" />
-                  <p className="text-[10px] font-black opacity-60 uppercase tracking-[0.2em] mb-2">
-                    Monthly Net Salary
-                  </p>
-                  <p className="text-4xl font-black tracking-tight">
-                    {userData.salary}
-                  </p>
-                  <div className="mt-8 pt-6 border-t border-white/10 flex justify-between items-center text-[10px] font-black">
-                    <span className="opacity-60 uppercase tracking-widest">
-                      PAYMENT STATUS
-                    </span>
-                    <span className="bg-white/20 px-4 py-1.5 rounded-xl">
-                      ACTIVE
-                    </span>
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="rounded-[2.5rem] bg-blue-600 p-8 text-white shadow-2xl shadow-blue-600/30">
+                    <p className="text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-2">
+                      Position
+                    </p>
+                    <p className="text-3xl font-black tracking-tight">
+                      {userData.position}
+                    </p>
+                    <p className="mt-4 text-sm font-semibold text-blue-100">
+                      Department: {userData.department}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <ProfileItem
+                      icon={<Building2 />}
+                      label="Department"
+                      value={userData.department}
+                    />
+                    <ProfileItem
+                      icon={<Briefcase />}
+                      label="Role"
+                      value={userData.role}
+                    />
+                    <ProfileItem
+                      icon={<MapPin />}
+                      label="Work Location"
+                      value={userData.location}
+                    />
+                    <ProfileItem
+                      icon={<Calendar />}
+                      label="Joining Date"
+                      value={userData.joinedDate}
+                    />
                   </div>
                 </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       </main>

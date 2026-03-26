@@ -17,7 +17,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { authApi, organizationApi, persistAuth } from "../api";
+import {
+  authApi,
+  organizationApi,
+  persistAuth,
+  type LegalDocumentItem,
+} from "../api";
 import { useAuth } from "../components/context/AuthContext";
 
 const registerSchema = z
@@ -63,7 +68,7 @@ export const RegisterOrgPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [showPass, setShowPass] = useState(false);
-  const [consentDocs, setConsentDocs] = useState<any[]>([]);
+  const [consentDocs, setConsentDocs] = useState<LegalDocumentItem[]>([]);
   const [otpCode, setOtpCode] = useState("");
   const [pendingCredentials, setPendingCredentials] = useState<{
     email: string;
@@ -205,15 +210,52 @@ export const RegisterOrgPage = () => {
     }
   };
 
-  const getDocUrl = (type: string) =>
-    consentDocs.find((d) => d.documentType === type)?.url || "#";
+  const normalizeDocumentKey = (value?: string | null) =>
+    (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const getDocUrl = (type: string) => {
+    const aliases =
+      type === "PrivacyPolicy"
+        ? ["privacypolicy", "privacypolicydocument", "privacy"]
+        : ["termsandconditions", "termsconditions", "terms"];
+
+    const matchedDocument = consentDocs.find((document) => {
+      const keys = [
+        normalizeDocumentKey(document.documentType),
+        normalizeDocumentKey(document.title),
+      ];
+
+      return aliases.some((alias) => keys.includes(alias));
+    });
+
+    const rawUrl = matchedDocument?.url;
+
+    if (!rawUrl) {
+      return "#";
+    }
+
+    if (/^(https?:)?\/\//i.test(rawUrl)) {
+      return rawUrl;
+    }
+
+    const apiBaseUrl =
+      (import.meta.env.VITE_API_URL as string | undefined) ||
+      "http://localhost:8080/v1";
+    const backendOrigin = apiBaseUrl.replace(/\/v1\/?$/, "");
+
+    try {
+      return new URL(rawUrl, `${backendOrigin}/`).toString();
+    } catch {
+      return "#";
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-12 px-4 transition-all">
       <div className="max-w-md mx-auto text-center mb-8">
         <div className="flex justify-center mb-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-            <Building2 size={28} />
+          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+            HR
           </div>
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
@@ -454,6 +496,8 @@ export const RegisterOrgPage = () => {
                   <a
                     href={getDocUrl("PrivacyPolicy")}
                     target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => event.stopPropagation()}
                     className="text-blue-600 font-bold hover:underline"
                   >
                     Privacy Policy
@@ -481,6 +525,8 @@ export const RegisterOrgPage = () => {
                   <a
                     href={getDocUrl("TermsAndConditions")}
                     target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => event.stopPropagation()}
                     className="text-blue-600 font-bold hover:underline"
                   >
                     Terms and Conditions

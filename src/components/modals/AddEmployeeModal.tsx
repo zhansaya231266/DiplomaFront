@@ -1,212 +1,182 @@
-import React, { useState, useEffect } from "react";
-import { X, Copy, Check, ShieldCheck, Building2 } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { X, Copy, Check, ShieldCheck } from "lucide-react";
 
-const EXAMPLE_DEPARTMENTS = [
-  { id: "1", name: "Development" },
-  { id: "2", name: "Human Resources" },
-  { id: "3", name: "Marketing" },
-  { id: "4", name: "Design" },
-  { id: "5", name: "Sales" },
-  { id: "6", name: "Finance" },
-];
+export type EmployeeModalData = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  positionId?: string;
+  position: string;
+  departmentId?: string;
+  department: string;
+  salary: number;
+  phoneNumber: string;
+  status: string;
+};
 
-const SYSTEM_ROLES = ["EMPLOYEE", "HR", "MANAGER", "ADMIN"];
+type EmployeeModalSubmitPayload = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  departmentId?: string;
+  departmentName?: string;
+  positionId?: string;
+  position: string;
+  salary: number;
+  status: string;
+};
+
+type AddEmployeeModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (
+    payload: EmployeeModalSubmitPayload,
+  ) => Promise<{ inviteCode?: string } | void>;
+  initialData: EmployeeModalData | null;
+  departments: Array<{ id: string; name: string }>;
+  positions: Array<{ id: string; name: string }>;
+  isReferenceLoading?: boolean;
+  referenceErrorMessage?: string;
+};
+
+const SYSTEM_ROLES = ["EMPLOYEE", "ADMIN"];
+const EMPLOYEE_STATUSES = ["Active", "Inactive"];
 
 export const AddEmployeeModal = ({
   isOpen,
   onClose,
-  onAdd,
+  onSubmit,
   initialData,
-}: any) => {
+  departments,
+  positions,
+  isReferenceLoading = false,
+  referenceErrorMessage = "",
+}: AddEmployeeModalProps) => {
   const [step, setStep] = useState(1);
-  const [isCustomDept, setIsCustomDept] = useState(false);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [inviteCode] = useState(
-    `HRMS-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-  );
+  const [inviteCode, setInviteCode] = useState("");
+  const isEdit = Boolean(initialData);
 
-  // Сброс состояния при открытии модалки
   useEffect(() => {
     if (isOpen) {
       setStep(1);
       setCopied(false);
-      setIsCustomDept(false);
       setLoading(false);
+      setInviteCode("");
     }
-  }, [isOpen]);
+  }, [isOpen, initialData]);
 
-  if (!isOpen) return null;
-  const isEdit = !!initialData;
+  if (!isOpen) {
+    return null;
+  }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const positionsPlaceholder = isReferenceLoading
+    ? "Loading positions..."
+    : positions.length === 0
+      ? "No positions available"
+      : "Select position";
+
+  const departmentsPlaceholder = isReferenceLoading
+    ? "Loading departments..."
+    : departments.length === 0
+      ? "No departments available"
+      : "Select department";
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
 
     try {
-      const formData = new FormData(e.currentTarget);
-      const deptValue = isCustomDept
-        ? formData.get("customDeptName")
-        : formData.get("departmentId");
-
-      const emp = {
-        id: initialData?.id || Date.now(),
-        first_name: formData.get("firstName"),
-        last_name: formData.get("lastName"),
-        email: formData.get("email"),
-        role: formData.get("role"),
-        position: formData.get("position"),
-        department_id: deptValue,
-        is_new_dept: isCustomDept,
-        salary: Number(formData.get("salary")),
-        phone_number: formData.get("phone") || "+7 (700) 000-00-00",
-        invite_code: inviteCode,
-      };
-
-      // Ждем завершения добавления в базу/стейт
-      await onAdd(emp);
+      const formData = new FormData(event.currentTarget);
+      const result = await onSubmit({
+        firstName: String(formData.get("firstName") || "").trim(),
+        lastName: String(formData.get("lastName") || "").trim(),
+        email: String(formData.get("email") || "").trim(),
+        role: String(formData.get("role") || "EMPLOYEE").trim(),
+        departmentId: String(formData.get("departmentId") || "").trim() || undefined,
+        departmentName:
+          departments.find((department) => department.id === String(formData.get("departmentId") || ""))
+            ?.name,
+        positionId: String(formData.get("positionId") || "").trim() || undefined,
+        position:
+          positions.find((position) => position.id === String(formData.get("positionId") || ""))
+            ?.name || String(formData.get("position") || "").trim(),
+        salary: Number(formData.get("salary") || 0),
+        status: String(formData.get("status") || "Active").trim(),
+      });
 
       if (isEdit) {
         onClose();
-      } else {
-        // Переходим к успеху только для новых сотрудников
-        setStep(2);
+        return;
       }
+
+      setInviteCode(result?.inviteCode || "");
+      setStep(2);
     } catch (error) {
-      console.error("Registration error:", error);
-      alert("Failed to register employee. Please try again.");
+      console.error("Employee action failed:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to process employee request.";
+      window.alert(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] w-full max-w-[500px] shadow-2xl animate-in zoom-in duration-200 overflow-hidden border border-gray-100 dark:border-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-[500px] overflow-hidden rounded-[2.5rem] border border-gray-100 bg-white shadow-2xl duration-200 animate-in zoom-in dark:border-gray-800 dark:bg-gray-900">
         {step === 1 ? (
           <form onSubmit={handleSubmit}>
-            <div className="px-10 py-7 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center">
-              <h2 className="text-xl font-extrabold text-gray-900 dark:text-white font-sans">
-                {isEdit ? "Edit Profile" : "Add New Employee"}
+            <div className="flex items-center justify-between border-b border-gray-50 px-10 py-7 dark:border-gray-800">
+              <h2 className="font-sans text-xl font-extrabold text-gray-900 dark:text-white">
+                {isEdit ? "Edit Employee" : "Invite Employee"}
               </h2>
               <button
                 type="button"
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 transition-colors hover:text-gray-600"
               >
                 <X size={22} />
               </button>
             </div>
 
-            <div className="p-10 space-y-6 text-left max-h-[75vh] overflow-y-auto font-sans">
+            <div className="max-h-[75vh] space-y-6 overflow-y-auto p-10 text-left font-sans">
               <div className="grid grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     First Name
                   </label>
                   <input
                     name="firstName"
                     required
-                    defaultValue={initialData?.first_name}
-                    placeholder="John"
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
+                    defaultValue={initialData?.firstName}
+                    readOnly={isEdit}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Last Name
                   </label>
                   <input
                     name="lastName"
                     required
-                    defaultValue={initialData?.last_name}
-                    placeholder="Smith"
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2.5 ml-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Department
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomDept(!isCustomDept)}
-                    className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    {isCustomDept ? "← back to list" : "+ create new"}
-                  </button>
-                </div>
-
-                {!isCustomDept ? (
-                  <select
-                    name="departmentId"
-                    required
-                    defaultValue={initialData?.department_id || ""}
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white appearance-none transition-all cursor-pointer text-[15px]"
-                  >
-                    <option value="" disabled>
-                      Select from example list...
-                    </option>
-                    {EXAMPLE_DEPARTMENTS.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="relative animate-in slide-in-from-left-2 duration-300">
-                    <Building2
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400"
-                      size={18}
-                    />
-                    <input
-                      name="customDeptName"
-                      required
-                      autoFocus
-                      placeholder="Enter new department name..."
-                      className="w-full pl-12 pr-5 py-4 bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-900 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 dark:text-white transition-all text-[15px]"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
-                    Access Role
-                  </label>
-                  <select
-                    name="role"
-                    defaultValue={initialData?.role || "EMPLOYEE"}
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
-                  >
-                    {SYSTEM_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
-                    Job Title
-                  </label>
-                  <input
-                    name="position"
-                    required
-                    defaultValue={initialData?.position}
-                    placeholder="Lead Designer"
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
+                    defaultValue={initialData?.lastName}
+                    readOnly={isEdit}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Work Email
                   </label>
                   <input
@@ -214,12 +184,52 @@ export const AddEmployeeModal = ({
                     type="email"
                     required
                     defaultValue={initialData?.email}
-                    placeholder="corp@mail.com"
-                    className="w-full px-5 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
+                    readOnly={isEdit}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Access Role
+                  </label>
+                  <select
+                    name="role"
+                    defaultValue={initialData?.role || "EMPLOYEE"}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
+                  >
+                    {SYSTEM_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Job Title
+                  </label>
+                  <select
+                    name="positionId"
+                    required
+                    defaultValue={initialData?.positionId || ""}
+                    disabled={isReferenceLoading || positions.length === 0}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 disabled:text-gray-400 dark:bg-gray-800 dark:text-white dark:disabled:text-gray-500"
+                  >
+                    <option value="" disabled>
+                      {positionsPlaceholder}
+                    </option>
+                    {positions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Monthly Salary
                   </label>
                   <div className="relative">
@@ -227,50 +237,98 @@ export const AddEmployeeModal = ({
                       name="salary"
                       type="number"
                       required
-                      defaultValue={initialData?.salary}
+                      defaultValue={initialData?.salary ?? 0}
                       placeholder="450000"
-                      className="w-full pl-5 pr-12 py-4 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 dark:text-white transition-all text-[15px]"
+                      className="w-full rounded-2xl border-none bg-gray-50 py-4 pl-5 pr-12 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">
                       ₸
                     </span>
                   </div>
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Department
+                  </label>
+                  <select
+                    name="departmentId"
+                    required
+                    defaultValue={initialData?.departmentId || ""}
+                    disabled={isReferenceLoading || departments.length === 0}
+                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 disabled:text-gray-400 dark:bg-gray-800 dark:text-white dark:disabled:text-gray-500"
+                  >
+                    <option value="" disabled>
+                      {departmentsPlaceholder}
+                    </option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {isEdit && (
+                  <div>
+                    <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Status
+                    </label>
+                    <select
+                      name="status"
+                      defaultValue={initialData?.status || "Active"}
+                      className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
+                    >
+                      {EMPLOYEE_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {referenceErrorMessage && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                  {referenceErrorMessage}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-5 bg-blue-600 text-white rounded-[1.75rem] font-bold shadow-xl shadow-blue-500/20 hover:bg-blue-700 active:scale-[0.98] transition-all mt-5 text-lg disabled:opacity-50 disabled:cursor-not-allowed font-sans"
+                className="mt-5 w-full rounded-[1.75rem] bg-blue-600 py-5 text-lg font-bold text-white shadow-xl shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
                   ? "Processing..."
                   : isEdit
                     ? "Save Changes"
-                    : "Register Employee"}
+                    : "Send Invite"}
               </button>
             </div>
           </form>
         ) : (
-          <div className="p-12 text-center animate-in zoom-in duration-300 font-sans">
-            <div className="w-24 h-24 bg-green-50 dark:bg-green-900/10 text-green-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner border border-green-100 dark:border-none">
+          <div className="p-12 text-center font-sans duration-300 animate-in zoom-in">
+            <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full border border-green-100 bg-green-50 text-green-500 shadow-inner dark:border-none dark:bg-green-900/10">
               <ShieldCheck size={48} />
             </div>
-            <h2 className="text-3xl font-black text-gray-900 dark:text-white mb-3 tracking-tight">
-              Success!
+            <h2 className="mb-3 text-3xl font-black tracking-tight text-gray-900 dark:text-white">
+              Invite Created
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-10 leading-relaxed font-medium">
-              We've created the employee profile. Now share this unique
-              invitation code with your new team member.
+            <p className="mb-10 text-sm font-medium leading-relaxed text-gray-500 dark:text-gray-400">
+              Share this invitation code with the employee so they can complete
+              registration.
             </p>
 
-            <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-[2.2rem] p-8 mb-10 text-left">
-              <p className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-[0.2em] text-center ml-1">
-                Security Invite Code
+            <div className="mb-10 rounded-[2.2rem] border border-gray-100 bg-gray-50 p-8 text-left dark:border-gray-700 dark:bg-gray-800/50">
+              <p className="mb-4 ml-1 text-center text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                Invitation Code
               </p>
               <div className="flex gap-3">
-                <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl py-5 px-4 font-mono font-bold text-center text-xl tracking-[0.3em] text-blue-600 shadow-sm">
-                  {inviteCode}
+                <div className="flex-1 rounded-2xl border border-gray-200 bg-white px-4 py-5 text-center font-mono text-xl font-bold tracking-[0.3em] text-blue-600 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                  {inviteCode || "N/A"}
                 </div>
                 <button
                   type="button"
@@ -278,7 +336,7 @@ export const AddEmployeeModal = ({
                     navigator.clipboard.writeText(inviteCode);
                     setCopied(true);
                   }}
-                  className={`p-5 rounded-2xl transition-all shadow-lg ${
+                  className={`rounded-2xl p-5 shadow-lg transition-all ${
                     copied
                       ? "bg-green-500 text-white shadow-green-200"
                       : "bg-blue-600 text-white shadow-blue-200 hover:bg-blue-700"
@@ -291,9 +349,9 @@ export const AddEmployeeModal = ({
 
             <button
               onClick={onClose}
-              className="w-full py-5 bg-gray-900 dark:bg-white dark:text-black text-white rounded-[1.75rem] font-black hover:opacity-90 transition-all text-lg shadow-2xl shadow-gray-200 dark:shadow-none"
+              className="w-full rounded-[1.75rem] bg-gray-900 py-5 text-lg font-black text-white shadow-2xl shadow-gray-200 transition-all hover:opacity-90 dark:bg-white dark:text-black dark:shadow-none"
             >
-              Finish Setup
+              Finish
             </button>
           </div>
         )}

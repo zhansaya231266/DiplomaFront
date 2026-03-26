@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -28,64 +29,58 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUserState] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hydrationRequestId = useRef(0);
 
   useEffect(() => {
-    const syncAuthState = () => {
-      setUserState(getStoredUser());
-      setIsLoading(false);
-    };
-
-    syncAuthState();
-    window.addEventListener(AUTH_CHANGE_EVENT, syncAuthState);
-
-    return () => {
-      window.removeEventListener(AUTH_CHANGE_EVENT, syncAuthState);
-    };
-  }, []);
-
-  useEffect(() => {
-    const hydrateProfile = async () => {
+    const syncAuthState = async () => {
       const token = getStoredToken();
       const storedUser = getStoredUser();
+      const requestId = ++hydrationRequestId.current;
 
       if (!token || !storedUser) {
+        setUserState(null);
+        setIsLoading(false);
         return;
       }
 
-      if (storedUser.role && (storedUser.role !== "Admin" || storedUser.departmentId)) {
-        return;
-      }
+      setUserState(storedUser);
+      setIsLoading(true);
 
       try {
         const profile = await profileApi.getMe();
         const nextUser: User = {
           ...storedUser,
-          firstname: profile.firstname,
-          lastname: profile.lastname,
-          email: profile.email,
-          role: profile.role,
-          fullName: profile.fullName,
-          phone: profile.phone,
-          phoneNumber: profile.phoneNumber,
-          verificationStatus: profile.verificationStatus,
-          joinedDate: profile.joinedDate,
-          department: profile.department,
-          departmentId: profile.departmentId,
-          position: profile.position,
-          salary: profile.salary,
-          location: profile.location,
-          organizationId: profile.organizationId,
-          organizationName: profile.organizationName,
+          ...profile,
         };
+
+        if (hydrationRequestId.current !== requestId) {
+          return;
+        }
 
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
         setUserState(nextUser);
       } catch {
-        // Keep existing auth state; component-level pages can still handle profile errors.
+        if (hydrationRequestId.current !== requestId) {
+          return;
+        }
+
+        setUserState(storedUser);
+      } finally {
+        if (hydrationRequestId.current === requestId) {
+          setIsLoading(false);
+        }
       }
     };
 
-    void hydrateProfile();
+    void syncAuthState();
+    const handleAuthChange = () => {
+      void syncAuthState();
+    };
+    window.addEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+
+    return () => {
+      window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+    };
   }, []);
 
   const setUser = useCallback((nextUser: User | null) => {

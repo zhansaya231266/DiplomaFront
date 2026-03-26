@@ -8,8 +8,8 @@ export const JoinPage = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center py-12 px-4 transition-colors">
       {/* Логотип платформы */}
       <div className="flex items-center gap-3 mb-10">
-        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-          <Building2 size={24} />
+        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+          HR
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           HRMS Platform

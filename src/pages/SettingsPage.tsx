@@ -4,8 +4,6 @@ import {
   Building2,
   Calculator,
   Clock,
-  Bell,
-  ShieldCheck,
   Save,
   Globe,
   Mail,
@@ -43,8 +41,6 @@ export const SettingsPage = () => {
                 { id: "company", label: "Company Info", icon: Building2 },
                 { id: "payroll", label: "Payroll Logic", icon: Calculator },
                 { id: "work", label: "Work Schedule", icon: Clock },
-                { id: "notifications", label: "Notifications", icon: Bell },
-                { id: "security", label: "Security", icon: ShieldCheck },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -82,16 +78,6 @@ export const SettingsPage = () => {
                     defaultValue="Acme Corporation"
                     className="w-full px-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                    Industry
-                  </label>
-                  <select className="w-full px-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold focus:ring-2 focus:ring-blue-500 outline-none dark:text-white">
-                    <option>Technology</option>
-                    <option>Finance</option>
-                    <option>Education</option>
-                  </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">

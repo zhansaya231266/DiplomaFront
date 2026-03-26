@@ -13,6 +13,7 @@ import {
   type UpdateEventPayload,
 } from "../api";
 import { useAuth } from "./context/AuthContext";
+import { normalizeRole } from "../shared/utils/roles";
 
 type EventFormState = {
   title: string;
@@ -79,20 +80,6 @@ const toUtcIso = (value: string) => {
   return localDate.toISOString();
 };
 
-const normalizeRole = (role?: string) => {
-  const normalized = role?.trim().toLowerCase();
-
-  if (normalized === "sysadmin" || normalized === "superadmin") {
-    return "SuperAdmin";
-  }
-
-  if (normalized === "admin") {
-    return "Admin";
-  }
-
-  return "Employee";
-};
-
 export const UpcomingEvents = () => {
   const { user } = useAuth();
   const role = normalizeRole(user?.role);
@@ -105,7 +92,7 @@ export const UpcomingEvents = () => {
   const [formState, setFormState] = useState<EventFormState>(emptyFormState);
 
   const canCreate = role === "SuperAdmin" || role === "Admin";
-  const adminDepartmentId = role === "Admin" ? user?.departmentId || null : null;
+  const departmentId = role === "Admin" ? user?.departmentId || null : null;
 
   const sortEvents = (items: EventItem[]) =>
     [...items].sort(
@@ -179,10 +166,16 @@ export const UpcomingEvents = () => {
           ),
         );
       } else {
-        if (role === "Admin" && !adminDepartmentId) {
-          throw new Error(
-            "Admin event creation requires departmentId from backend profile data.",
-          );
+        if (!formState.startsAt || !formState.endsAt) {
+          throw new Error("Start and end date are required.");
+        }
+
+        if (new Date(formState.startsAt) >= new Date(formState.endsAt)) {
+          throw new Error("End date must be later than start date.");
+        }
+
+        if (role === "Admin" && !departmentId) {
+          throw new Error("Department is not loaded for the current admin profile.");
         }
 
         const payload: CreateEventPayload = {
@@ -190,8 +183,8 @@ export const UpcomingEvents = () => {
           description: formState.description,
           startsAt: toUtcIso(formState.startsAt),
           endsAt: toUtcIso(formState.endsAt),
-          scope: role === "SuperAdmin" ? "global" : "department",
-          departmentId: role === "Admin" ? adminDepartmentId : null,
+          scope: role === "Admin" ? "department" : "global",
+          departmentId,
         };
         await eventsApi.create(payload);
         await loadEvents();
@@ -235,6 +228,7 @@ export const UpcomingEvents = () => {
         </h3>
         {canCreate && (
           <button
+            type="button"
             onClick={openCreateForm}
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 transition-colors shadow-sm"
             title="Add event"
@@ -321,16 +315,16 @@ export const UpcomingEvents = () => {
             </div>
           </div>
 
-          {role === "SuperAdmin" && (
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              New events will be created as global events.
-            </p>
-          )}
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            {role === "Admin"
+              ? "New events are created for your department."
+              : "New events are created as global events for the organization."}
+          </p>
 
           <div className="flex gap-3 pt-1">
             <button
               type="submit"
-              disabled={isSubmitting || (role === "Admin" && !adminDepartmentId)}
+              disabled={isSubmitting}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors"
             >
               {editingEvent ? "Save" : "Create"}
@@ -357,8 +351,10 @@ export const UpcomingEvents = () => {
           Loading events...
         </div>
       ) : events.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-          No upcoming events.
+        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-8 text-center">
+          <p className="text-sm text-gray-400 dark:text-gray-500">
+            No upcoming events.
+          </p>
         </div>
       ) : (
         <div className="space-y-5">

@@ -11,8 +11,9 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "./context/AuthContext";
+import { normalizeRole } from "../shared/utils/roles";
 
-const menuItems = [
+const superAdminMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Users, label: "Employees", path: "/employees" },
   { icon: Clock, label: "Attendance", path: "/attendance" },
@@ -21,10 +22,29 @@ const menuItems = [
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
+const adminMenuItems = [
+  { icon: LayoutDashboard, label: "Dept Overview", path: "/dashboard" },
+  { icon: Users, label: "My Team", path: "/employees" },
+  { icon: Clock, label: "Attendance", path: "/attendance" },
+];
+
+const employeeMenuItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: Clock, label: "Attendance", path: "/attendance" },
+  { icon: CreditCard, label: "Payroll", path: "/payroll" },
+];
+
 export const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  const role = normalizeRole(user?.role);
+  const menuItems =
+    role === "Admin"
+      ? adminMenuItems
+      : role === "Employee"
+        ? employeeMenuItems
+        : superAdminMenuItems;
 
   // Состояние темы (инициализация из документа или localStorage)
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -81,7 +101,8 @@ export const Sidebar = () => {
 
         {/* Navigation */}
         <nav className="space-y-1">
-          {menuItems.map((item) => {
+          {!isLoading &&
+            menuItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <button
