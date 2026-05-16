@@ -9,9 +9,13 @@ import { JoinPage } from "./pages/JoinPage";
 import { InvitationCodePage } from "./pages/InvitationCodePage";
 import { ActivateAccountPage } from "./pages/ActivateAccountPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { AdminDashboard } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
-import { AttendancePage } from "./pages/AttendancePage";
+import {
+  AttendancePage,
+  TeamAttendanceManagementPage,
+} from "./pages/AttendancePage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PayrollPage } from "./pages/PayrollPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -34,6 +38,7 @@ function App() {
                 element={<ActivateAccountPage />}
               />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route
                 path="/dashboard"
                 element={
@@ -55,6 +60,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <AttendancePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/team-attendance"
+                element={
+                  <ProtectedRoute>
+                    <TeamAttendanceManagementPage />
                   </ProtectedRoute>
                 }
               />

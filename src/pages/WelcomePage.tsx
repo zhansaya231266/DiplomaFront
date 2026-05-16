@@ -69,16 +69,15 @@ export const WelcomePage = () => {
       {/* Hero Section */}
       <section className="py-20 md:py-28 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 transition-colors duration-300">
         <div className="max-w-5xl mx-auto px-4 text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-950 dark:text-white leading-tight">
-            Modern HRMS with{" "}
+          <h1 className="text-3xl md:text-4xl font-extrabold text-gray-950 dark:text-white leading-tight">
+            Smart EMP: AI-Enhanced Employee Management with{" "}
             <span className="text-blue-600 dark:text-blue-500">
               Automated Payroll
             </span>
           </h1>
-          <p className="mt-6 text-lg text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-            Streamline your HR operations with our comprehensive platform.
+          <p className="mt-5 text-base text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
             Manage employees, track attendance, process payroll, and generate
-            reports - all in one place.
+            attendance analytics in one connected workspace.
           </p>
           <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Link
@@ -111,7 +110,7 @@ export const WelcomePage = () => {
               >
                 <feat.icon className={`h-6 w-6 ${feat.color}`} />
               </div>
-              <h3 className="mt-6 text-xl font-semibold text-gray-950 dark:text-white">
+              <h3 className="mt-6 text-lg font-semibold text-gray-950 dark:text-white">
                 {feat.title}
               </h3>
               <p className="mt-3 text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
@@ -125,7 +124,7 @@ export const WelcomePage = () => {
       {/* How It Works */}
       <section className="py-16 md:py-24 bg-white dark:bg-gray-900 border-y border-gray-100 dark:border-gray-800 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl font-bold text-gray-950 dark:text-white">
+          <h2 className="text-2xl font-bold text-gray-950 dark:text-white">
             How It Works
           </h2>
           <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-12 relative">
@@ -138,11 +137,11 @@ export const WelcomePage = () => {
                 className="relative flex flex-col items-center group"
               >
                 <div
-                  className={`w-20 h-20 rounded-full border-2 flex items-center justify-center bg-white dark:bg-gray-900 text-3xl font-bold ${step.circleColor} shadow-md group-hover:scale-110 transition-transform duration-300`}
+                  className={`w-20 h-20 rounded-full border-2 flex items-center justify-center bg-white dark:bg-gray-900 text-2xl font-bold ${step.circleColor} shadow-md group-hover:scale-110 transition-transform duration-300`}
                 >
                   {step.num}
                 </div>
-                <h4 className="mt-8 text-lg font-semibold text-gray-950 dark:text-white">
+                <h4 className="mt-8 text-base font-semibold text-gray-950 dark:text-white">
                   {step.title}
                 </h4>
                 <p className="mt-3 text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
@@ -157,11 +156,11 @@ export const WelcomePage = () => {
       {/* Final CTA */}
       <section className="py-16 px-4">
         <div className="max-w-5xl mx-auto bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-700 dark:to-purple-800 p-12 md:p-16 rounded-3xl text-center shadow-2xl shadow-blue-500/20">
-          <h2 className="text-3xl md:text-4xl font-bold text-white leading-tight">
-            Ready to Transform Your HR Operations?
+          <h2 className="text-2xl md:text-3xl font-bold text-white leading-tight">
+            Ready to Transform Employee Management?
           </h2>
-          <p className="mt-6 text-lg text-blue-100 max-w-2xl mx-auto">
-            Join hundreds of companies using our HRMS platform
+          <p className="mt-5 text-base text-blue-100 max-w-2xl mx-auto">
+            Join hundreds of companies using Smart EMP
           </p>
           <Link
             to="/join"

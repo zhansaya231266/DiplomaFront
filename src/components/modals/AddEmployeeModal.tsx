@@ -44,6 +44,8 @@ type AddEmployeeModalProps = {
 
 const SYSTEM_ROLES = ["EMPLOYEE", "ADMIN"];
 const EMPLOYEE_STATUSES = ["Active", "Inactive"];
+const fieldClassName =
+  "w-full rounded-xl border border-transparent bg-gray-50 px-4 py-3 text-sm font-semibold outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:text-gray-400 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:focus:ring-blue-900/30 dark:disabled:text-gray-500 dark:read-only:text-gray-500";
 
 export const AddEmployeeModal = ({
   isOpen,
@@ -130,24 +132,24 @@ export const AddEmployeeModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-[500px] overflow-hidden rounded-[2.5rem] border border-gray-100 bg-white shadow-2xl duration-200 animate-in zoom-in dark:border-gray-800 dark:bg-gray-900">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-2xl duration-200 animate-in zoom-in-95 dark:border-gray-800 dark:bg-gray-900">
         {step === 1 ? (
           <form onSubmit={handleSubmit}>
-            <div className="flex items-center justify-between border-b border-gray-50 px-10 py-7 dark:border-gray-800">
+            <div className="flex items-center justify-between border-b border-gray-100 px-8 py-6 dark:border-gray-800">
               <h2 className="font-sans text-xl font-extrabold text-gray-900 dark:text-white">
                 {isEdit ? "Edit Employee" : "Invite Employee"}
               </h2>
               <button
                 type="button"
                 onClick={onClose}
-                className="text-gray-400 transition-colors hover:text-gray-600"
+                className="rounded-xl bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-300"
               >
-                <X size={22} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="max-h-[75vh] space-y-6 overflow-y-auto p-10 text-left font-sans">
-              <div className="grid grid-cols-2 gap-5">
+            <div className="max-h-[75vh] space-y-5 overflow-y-auto p-8 text-left font-sans">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     First Name
@@ -157,7 +159,7 @@ export const AddEmployeeModal = ({
                     required
                     defaultValue={initialData?.firstName}
                     readOnly={isEdit}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
+                    className={fieldClassName}
                   />
                 </div>
                 <div>
@@ -169,12 +171,12 @@ export const AddEmployeeModal = ({
                     required
                     defaultValue={initialData?.lastName}
                     readOnly={isEdit}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
+                    className={fieldClassName}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Work Email
@@ -185,7 +187,7 @@ export const AddEmployeeModal = ({
                     required
                     defaultValue={initialData?.email}
                     readOnly={isEdit}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 read-only:text-gray-400 dark:bg-gray-800 dark:text-white dark:read-only:text-gray-500"
+                    className={fieldClassName}
                   />
                 </div>
                 <div>
@@ -195,7 +197,7 @@ export const AddEmployeeModal = ({
                   <select
                     name="role"
                     defaultValue={initialData?.role || "EMPLOYEE"}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
+                    className={fieldClassName}
                   >
                     {SYSTEM_ROLES.map((role) => (
                       <option key={role} value={role}>
@@ -206,7 +208,7 @@ export const AddEmployeeModal = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Job Title
@@ -216,7 +218,7 @@ export const AddEmployeeModal = ({
                     required
                     defaultValue={initialData?.positionId || ""}
                     disabled={isReferenceLoading || positions.length === 0}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 disabled:text-gray-400 dark:bg-gray-800 dark:text-white dark:disabled:text-gray-500"
+                    className={fieldClassName}
                   >
                     <option value="" disabled>
                       {positionsPlaceholder}
@@ -239,16 +241,16 @@ export const AddEmployeeModal = ({
                       required
                       defaultValue={initialData?.salary ?? 0}
                       placeholder="450000"
-                      className="w-full rounded-2xl border-none bg-gray-50 py-4 pl-5 pr-12 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
+                      className={`${fieldClassName} pr-14`}
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">
-                      ₸
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">
+                      KZT
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2.5 ml-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Department
@@ -258,7 +260,7 @@ export const AddEmployeeModal = ({
                     required
                     defaultValue={initialData?.departmentId || ""}
                     disabled={isReferenceLoading || departments.length === 0}
-                    className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 disabled:text-gray-400 dark:bg-gray-800 dark:text-white dark:disabled:text-gray-500"
+                    className={fieldClassName}
                   >
                     <option value="" disabled>
                       {departmentsPlaceholder}
@@ -278,7 +280,7 @@ export const AddEmployeeModal = ({
                     <select
                       name="status"
                       defaultValue={initialData?.status || "Active"}
-                      className="w-full rounded-2xl border-none bg-gray-50 px-5 py-4 text-[15px] outline-none transition-all focus:ring-2 focus:ring-blue-500/20 dark:bg-gray-800 dark:text-white"
+                      className={fieldClassName}
                     >
                       {EMPLOYEE_STATUSES.map((status) => (
                         <option key={status} value={status}>
@@ -299,7 +301,7 @@ export const AddEmployeeModal = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-5 w-full rounded-[1.75rem] bg-blue-600 py-5 text-lg font-bold text-white shadow-xl shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-3 w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
                   ? "Processing..."
@@ -314,7 +316,7 @@ export const AddEmployeeModal = ({
             <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full border border-green-100 bg-green-50 text-green-500 shadow-inner dark:border-none dark:bg-green-900/10">
               <ShieldCheck size={48} />
             </div>
-            <h2 className="mb-3 text-3xl font-black tracking-tight text-gray-900 dark:text-white">
+            <h2 className="mb-3 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
               Invite Created
             </h2>
             <p className="mb-10 text-sm font-medium leading-relaxed text-gray-500 dark:text-gray-400">
@@ -349,7 +351,7 @@ export const AddEmployeeModal = ({
 
             <button
               onClick={onClose}
-              className="w-full rounded-[1.75rem] bg-gray-900 py-5 text-lg font-black text-white shadow-2xl shadow-gray-200 transition-all hover:opacity-90 dark:bg-white dark:text-black dark:shadow-none"
+              className="w-full rounded-[1.75rem] bg-gray-900 py-4 text-base font-black text-white shadow-2xl shadow-gray-200 transition-all hover:opacity-90 dark:bg-white dark:text-black dark:shadow-none"
             >
               Finish
             </button>

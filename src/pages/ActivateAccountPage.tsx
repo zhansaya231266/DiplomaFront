@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 import { Mail, Eye, EyeOff, ChevronLeft, Loader2, Phone } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  authApi,
-  clearStoredAuth,
   employeesApi,
   getApiErrorMessage,
   inviteApi,
-  persistAuth,
-  profileApi,
   type InviteVerificationResponse,
 } from "../api";
 import {
@@ -84,51 +80,29 @@ export const ActivateAccountPage = () => {
     setApiError(null);
 
     try {
-      await inviteApi.completeRegistration({
+      const result = await inviteApi.completeRegistration({
         code,
         password,
         phoneNumber,
       });
 
-      const inviteDraft =
-        getInviteEmployeeDraft({ code, email: invite.email }) ||
-        (invite.departmentId && invite.positionId
-          ? {
-              code,
-              email: invite.email,
-              departmentId: invite.departmentId,
-              positionId: invite.positionId,
-              role: invite.role,
-              salaryRate: invite.salaryRate || "0",
-              status: invite.status || "Active",
-            }
-          : null);
-
-      if (inviteDraft) {
-        const { token, user, refreshToken } = await authApi.login({
-          email: invite.email,
-          password,
-        });
-
-        persistAuth(token, user, refreshToken);
-
+      const draft = getInviteEmployeeDraft({ code, email: invite.email });
+      if (result?.userId && draft?.departmentId && draft?.positionId) {
         try {
-          const profile = await profileApi.getMe();
-
           await employeesApi.create({
-            userId: profile.id,
-            departmentId: inviteDraft.departmentId,
-            positionId: inviteDraft.positionId,
-            role: inviteDraft.role,
-            salaryRate: inviteDraft.salaryRate,
-            status: inviteDraft.status,
+            userId: result.userId,
+            departmentId: draft.departmentId,
+            positionId: draft.positionId,
+            role: draft.role || invite.role,
+            salaryRate: draft.salaryRate || "0",
+            status: draft.status || "Active",
           });
-        } finally {
-          clearStoredAuth();
+        } catch {
+          // Non-fatal: employee profile will show "Not set" until admin assigns it
         }
-
-        removeInviteEmployeeDraft({ code, email: invite.email });
       }
+
+      removeInviteEmployeeDraft({ code, email: invite.email });
 
       sessionStorage.removeItem(VERIFIED_INVITE_STORAGE_KEY);
       navigate("/login");

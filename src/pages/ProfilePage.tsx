@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { User, Briefcase, Building2, MapPin, Calendar, LogOut, Phone, Mail } from "lucide-react";
+import { User, Briefcase, Building2, MapPin, Calendar, LogOut, Phone, Mail, Clock, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
-import { profileApi, type UserProfileResponse } from "../api";
-import { useAuth } from "../components/context/AuthContext";
+import {
+  attendanceApi,
+  calendarApi,
+  profileApi,
+  type CalendarSummaryResponse,
+  type UserProfileResponse,
+  type WorkScheduleItem,
+} from "../api";
+import { useAuth } from "../components/context/useAuth";
 import { normalizeRole } from "../shared/utils/roles";
 
 const EMPTY_VALUE_LABEL = "Not set";
@@ -42,6 +49,9 @@ export const ProfilePage = () => {
   const navigate = useNavigate();
   const { user, logout, setUser } = useAuth();
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const [workSchedule, setWorkSchedule] = useState<WorkScheduleItem | null>(null);
+  const [calendarSummary, setCalendarSummary] =
+    useState<CalendarSummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +64,28 @@ export const ProfilePage = () => {
         const response = await profileApi.getMe();
         setProfile(response);
         setUser(response);
+
+        const currentRole = normalizeRole(response.role);
+        if (currentRole !== "SuperAdmin") {
+          const month = new Date().toISOString().slice(0, 7);
+
+          try {
+            setCalendarSummary(await calendarApi.getSummary(month));
+          } catch {
+            setCalendarSummary(null);
+          }
+
+          const employeeId = response.employeeId || response.id;
+          if (employeeId) {
+            try {
+              setWorkSchedule(
+                await attendanceApi.getMyWorkSchedule(employeeId),
+              );
+            } catch {
+              setWorkSchedule(null);
+            }
+          }
+        }
       } catch (loadError) {
         setError(
           loadError instanceof Error
@@ -120,6 +152,8 @@ export const ProfilePage = () => {
     logout();
     navigate("/");
   };
+  const holidays =
+    calendarSummary?.days.filter((day) => day.type === "HOLIDAY") || [];
 
   return (
     <div className="flex min-h-screen bg-gray-50/50 dark:bg-gray-950 font-sans">
@@ -147,7 +181,7 @@ export const ProfilePage = () => {
                 {isSuperAdmin ? "Profile" : "My Profile"}
               </p>
               <div className="flex flex-col md:flex-row md:items-center gap-4 mb-3">
-                <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">
+                <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">
                   {isLoading ? "Loading profile..." : fullName}
                 </h1>
                 <span className="px-4 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-full uppercase tracking-widest">
@@ -212,7 +246,7 @@ export const ProfilePage = () => {
                     <p className="text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-2">
                       Position
                     </p>
-                    <p className="text-3xl font-black tracking-tight">
+                    <p className="text-2xl font-black tracking-tight">
                       {userData.position}
                     </p>
                     <p className="mt-4 text-sm font-semibold text-blue-100">
@@ -246,6 +280,46 @@ export const ProfilePage = () => {
             </div>
             )}
           </div>
+
+          {!isSuperAdmin && (
+            <div className="grid grid-cols-1 gap-8">
+              <section className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 shadow-sm border border-gray-100 dark:border-gray-800">
+                <h3 className="mb-8 flex items-center gap-4 text-xl font-black text-gray-900 dark:text-white">
+                  Work Schedule
+                  <div className="h-px flex-1 bg-gray-50 dark:bg-gray-800" />
+                </h3>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                  <ProfileItem
+                    icon={<Clock />}
+                    label="Work Start"
+                    value={workSchedule?.workStart || EMPTY_VALUE_LABEL}
+                  />
+                  <ProfileItem
+                    icon={<Clock />}
+                    label="Work End"
+                    value={workSchedule?.workEnd || EMPTY_VALUE_LABEL}
+                  />
+                  <ProfileItem
+                    icon={<Bell />}
+                    label="Late Allowance"
+                    value={
+                      workSchedule
+                        ? `${workSchedule.lateThresholdMinutes} min`
+                        : EMPTY_VALUE_LABEL
+                    }
+                  />
+                </div>
+
+                <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-semibold text-blue-700 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-300">
+                  {holidays.length > 0
+                    ? `Holiday notice: ${holidays
+                        .map((day) => `${day.date} ${day.name || "Holiday"}`)
+                        .join(", ")}.`
+                    : "No holiday notices for the current month."}
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       </main>
     </div>
@@ -269,7 +343,7 @@ const ProfileItem = ({
       <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">
         {label}
       </p>
-      <p className="font-bold text-gray-800 dark:text-gray-100 text-[15px]">
+      <p className="font-bold text-gray-800 dark:text-gray-100 text-sm">
         {value}
       </p>
     </div>

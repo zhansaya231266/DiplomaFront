@@ -1,5 +1,5 @@
 import { SunIcon, MoonIcon } from "@heroicons/react/24/outline";
-import { useTheme } from "./context/ThemeContext";
+import { useTheme } from "./context/useTheme";
 
 interface ThemeToggleProps {
   variant?: "full" | "minimal";
@@ -39,7 +39,7 @@ export const ThemeToggle = ({ variant = "minimal" }: ThemeToggleProps) => {
           <MoonIcon className="h-5 w-5" />
         )}
       </div>
-      <span className="text-[14px] font-bold">
+      <span className="text-sm font-bold">
         {isDark ? "Light Mode" : "Dark Mode"}
       </span>
     </button>

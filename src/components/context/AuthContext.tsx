@@ -1,13 +1,13 @@
 import React, {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
 } from "react";
+import { AuthContext } from "./authContextValue";
 import {
   AUTH_CHANGE_EVENT,
+  authApi,
   clearStoredAuth,
   getStoredUser,
   getStoredToken,
@@ -15,16 +15,6 @@ import {
   USER_STORAGE_KEY,
   type User,
 } from "../../api";
-
-interface AuthContextType {
-  user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  setUser: (user: User | null) => void;
-  logout: () => void;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUserState] = useState<User | null>(null);
@@ -51,6 +41,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const nextUser: User = {
           ...storedUser,
           ...profile,
+          role: profile.role || storedUser.role,
         };
 
         if (hydrationRequestId.current !== requestId) {
@@ -94,6 +85,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const logout = useCallback(() => {
+    void authApi.logout();
     clearStoredAuth();
     setUserState(null);
   }, []);
@@ -111,14 +103,4 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-
-  return context;
 };

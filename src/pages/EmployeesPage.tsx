@@ -5,13 +5,7 @@ import {
   AddEmployeeModal,
   type EmployeeModalData,
 } from "../components/modals/AddEmployeeModal";
-import {
-  Search,
-  Plus,
-  ChevronDown,
-  X,
-  Loader2,
-} from "lucide-react";
+import { Search, Plus, ChevronDown, X, Loader2 } from "lucide-react";
 import {
   employeesApi,
   inviteApi,
@@ -21,13 +15,14 @@ import {
   getApiErrorMessage,
   type PositionItem,
 } from "../api";
-import { useAuth } from "../components/context/AuthContext";
+import { useAuth } from "../components/context/useAuth";
 import { normalizeRole } from "../shared/utils/roles";
-import { saveInviteEmployeeDraft } from "../shared/utils/inviteEmployeeDraft";
+import { type DepartmentEmployee } from "../shared/constants/adminPanel";
 import {
-  type DepartmentEmployee,
-  type DepartmentTask,
-} from "../shared/constants/adminPanel";
+  taskStore,
+  type StoredDepartmentTask,
+} from "../shared/utils/taskStore";
+import { saveInviteEmployeeDraft } from "../shared/utils/inviteEmployeeDraft";
 
 type EmployeeViewModel = {
   id: string;
@@ -51,10 +46,10 @@ type TeamModalState =
   | { type: "view"; employee: AdminTeamEmployee }
   | { type: "edit"; employee: AdminTeamEmployee }
   | { type: "task"; employee: AdminTeamEmployee }
-  | { type: "report"; employee: AdminTeamEmployee; task: DepartmentTask }
+  | { type: "reports"; employee: AdminTeamEmployee }
   | null;
 
-type AdminTeamEmployee = Omit<DepartmentEmployee, "id"> & {
+type AdminTeamEmployee = Omit<DepartmentEmployee, "id" | "tasks"> & {
   id: string;
   firstName: string;
   lastName: string;
@@ -62,6 +57,19 @@ type AdminTeamEmployee = Omit<DepartmentEmployee, "id"> & {
   positionId?: string;
   role: string;
   status: string;
+  tasks: StoredDepartmentTask[];
+};
+
+type EmployeeProfileDetails = {
+  name: string;
+  role: string;
+  position: string;
+  department: string;
+  email: string;
+  phone: string;
+  salary: string;
+  status: string;
+  image: string;
 };
 
 const formatKZT = (amount: number) =>
@@ -78,6 +86,81 @@ const parseSalary = (value: string) => {
 
 const buildEmployeeAvatar = (seed: string) =>
   `https://i.pravatar.cc/150?u=${encodeURIComponent(seed)}`;
+
+const EmployeeProfileModal = ({
+  employee,
+  onClose,
+}: {
+  employee: EmployeeProfileDetails;
+  onClose: () => void;
+}) => {
+  const detailItems = [
+    { label: "Email", value: employee.email },
+    { label: "Phone", value: employee.phone },
+    { label: "Department", value: employee.department },
+    { label: "Position", value: employee.position },
+    { label: "Salary", value: employee.salary },
+    { label: "Status", value: employee.status },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[24px] border border-gray-100 bg-white text-left shadow-2xl duration-200 animate-in zoom-in-95 dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-8 py-6 dark:border-gray-800">
+          <div className="flex min-w-0 items-center gap-4">
+            <img
+              src={employee.image}
+              className="h-16 w-16 rounded-2xl border border-gray-100 object-cover dark:border-gray-800"
+              alt={employee.name}
+            />
+            <div className="min-w-0">
+              <h2 className="truncate text-xl font-black text-gray-900 dark:text-white">
+                {employee.name}
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                {employee.position || employee.role}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-gray-100 p-2 text-gray-500 transition hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            aria-label="Close profile"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 p-8 md:grid-cols-2">
+          {detailItems.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50"
+            >
+              <p className="text-[11px] font-black uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                {item.label}
+              </p>
+              <p className="mt-2 break-words text-sm font-bold text-gray-900 dark:text-white">
+                {item.value || "Not provided"}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end border-t border-gray-100 px-8 py-5 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl bg-gray-900 px-6 py-3 text-sm font-bold text-white transition hover:bg-black dark:bg-blue-600 dark:hover:bg-blue-700"
+          >
+            Close Profile
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const mapEmployee = (employee: EmployeeItem): EmployeeViewModel => {
   const salaryValue = parseSalary(employee.salaryRate);
@@ -133,7 +216,10 @@ const toAdminModalData = (employee: AdminTeamEmployee): EmployeeModalData => {
   };
 };
 
-const mapAdminTeamEmployee = (employee: EmployeeItem): AdminTeamEmployee => ({
+const mapAdminTeamEmployee = (
+  employee: EmployeeItem,
+  tasks: StoredDepartmentTask[] = [],
+): AdminTeamEmployee => ({
   id: employee.id,
   firstName: employee.firstName,
   lastName: employee.lastName,
@@ -158,7 +244,7 @@ const mapAdminTeamEmployee = (employee: EmployeeItem): AdminTeamEmployee => ({
   deductions: 0,
   image: buildEmployeeAvatar(employee.email || employee.id),
   status: employee.status,
-  tasks: [],
+  tasks,
 });
 
 const SuperAdminEmployeesPage = () => {
@@ -171,11 +257,14 @@ const SuperAdminEmployeesPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("All Departments");
   const [employees, setEmployees] = useState<EmployeeViewModel[]>([]);
+  const [allEmployees, setAllEmployees] = useState<EmployeeViewModel[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [positions, setPositions] = useState<PositionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [isReferenceLoading, setIsReferenceLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [searchMessage, setSearchMessage] = useState("");
   const [referenceErrorMessage, setReferenceErrorMessage] = useState("");
 
   const loadEmployees = async () => {
@@ -184,7 +273,9 @@ const SuperAdminEmployeesPage = () => {
 
     try {
       const employeesResponse = await employeesApi.list();
-      setEmployees(employeesResponse.map(mapEmployee));
+      const mappedEmployees = employeesResponse.map(mapEmployee);
+      setEmployees(mappedEmployees);
+      setAllEmployees(mappedEmployees);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "Failed to load employees"));
     } finally {
@@ -243,6 +334,53 @@ const SuperAdminEmployeesPage = () => {
   }, []);
 
   useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const query = searchQuery.trim();
+    const selectedDepartment = departments.find(
+      (department) => department.name === selectedDept,
+    );
+    const shouldUseServerSearch =
+      query.length >= 2 || selectedDept !== "All Departments";
+
+    if (!shouldUseServerSearch) {
+      setEmployees(allEmployees);
+      setSearchMessage("");
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearching(true);
+      setSearchMessage("");
+
+      try {
+        const response = await employeesApi.search({
+          query,
+          departmentId: selectedDepartment?.id,
+        });
+        setEmployees(response.map(mapEmployee));
+      } catch (error) {
+        setEmployees(allEmployees);
+        setSearchMessage(
+          getApiErrorMessage(error, "Server search is unavailable"),
+        );
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    allEmployees,
+    departments,
+    isLoading,
+    searchQuery,
+    selectedDept,
+  ]);
+
+  useEffect(() => {
     if (!isModalOpen) {
       return;
     }
@@ -256,13 +394,14 @@ const SuperAdminEmployeesPage = () => {
 
   const departmentFilters = [
     "All Departments",
-    ...Array.from(new Set(employees.map((employee) => employee.dept))),
+    ...Array.from(new Set(allEmployees.map((employee) => employee.dept))),
   ];
 
   const filteredEmployees = employees.filter((employee) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
       employee.name.toLowerCase().includes(query) ||
+      employee.email.toLowerCase().includes(query) ||
       employee.role.toLowerCase().includes(query) ||
       employee.position.toLowerCase().includes(query);
     const matchesDept =
@@ -283,7 +422,9 @@ const SuperAdminEmployeesPage = () => {
 
     try {
       await employeesApi.delete(employeeId);
-      setEmployees((prev) => prev.filter((employee) => employee.id !== employeeId));
+      setEmployees((prev) =>
+        prev.filter((employee) => employee.id !== employeeId),
+      );
     } catch (error) {
       window.alert(getApiErrorMessage(error, "Failed to delete employee"));
     }
@@ -361,6 +502,8 @@ const SuperAdminEmployeesPage = () => {
       departmentId: payload.departmentId,
       positionId: payload.positionId,
       position: payload.position,
+      salaryRate: payload.salary.toFixed(2),
+      status: payload.status || "Active",
     });
 
     if (payload.departmentId && payload.positionId) {
@@ -384,11 +527,11 @@ const SuperAdminEmployeesPage = () => {
       <main className="flex-1 overflow-y-auto p-10">
         <header className="mb-10 flex items-end justify-between">
           <div className="text-left">
-            <h1 className="text-[28px] font-extrabold tracking-tight text-gray-900 dark:text-white">
+            <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
               Employees
             </h1>
-            <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
-              Manage your workforce ({employees.length})
+            <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">
+              Manage your workforce ({allEmployees.length})
             </p>
           </div>
           <button
@@ -408,15 +551,21 @@ const SuperAdminEmployeesPage = () => {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by name, role or position..."
-              className="w-full rounded-xl border border-gray-200 bg-white py-3.5 pl-12 pr-4 text-[15px] outline-none shadow-sm transition-all focus:ring-4 focus:ring-blue-50 dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:focus:ring-blue-900/20"
+              placeholder="Search by name, role, email or position..."
+              className="w-full rounded-xl border border-gray-200 bg-white py-3.5 pl-12 pr-4 text-sm outline-none shadow-sm transition-all focus:ring-4 focus:ring-blue-50 dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:focus:ring-blue-900/20"
             />
+            {isSearching && (
+              <Loader2
+                className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500"
+                size={18}
+              />
+            )}
           </div>
           <div className="relative">
             <select
               value={selectedDept}
               onChange={(event) => setSelectedDept(event.target.value)}
-              className="cursor-pointer appearance-none rounded-xl border border-gray-200 bg-white py-3.5 pl-6 pr-12 text-[15px] font-bold text-gray-700 outline-none shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200"
+              className="cursor-pointer appearance-none rounded-xl border border-gray-200 bg-white py-3.5 pl-6 pr-12 text-sm font-bold text-gray-700 outline-none shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200"
             >
               {departmentFilters.map((department) => (
                 <option
@@ -435,19 +584,25 @@ const SuperAdminEmployeesPage = () => {
           </div>
         </div>
 
+        {searchMessage && (
+          <div className="mb-6 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 dark:border-orange-900/30 dark:bg-orange-900/10 dark:text-orange-400">
+            {searchMessage}. Showing local results.
+          </div>
+        )}
+
         {isLoading ? (
-          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-gray-100 bg-white text-[15px] font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-gray-100 bg-white text-sm font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
             <div className="flex items-center gap-3">
               <Loader2 size={18} className="animate-spin" />
               Loading employees...
             </div>
           </div>
         ) : errorMessage ? (
-          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-red-100 bg-white px-6 text-center text-[15px] font-medium text-red-600 shadow-sm dark:border-red-900/40 dark:bg-gray-900 dark:text-red-400">
+          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-red-100 bg-white px-6 text-center text-sm font-medium text-red-600 shadow-sm dark:border-red-900/40 dark:bg-gray-900 dark:text-red-400">
             {errorMessage}
           </div>
         ) : filteredEmployees.length === 0 ? (
-          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-gray-100 bg-white px-6 text-center text-[15px] font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-gray-100 bg-white px-6 text-center text-sm font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
             No employees match the current filters.
           </div>
         ) : (
@@ -457,83 +612,28 @@ const SuperAdminEmployeesPage = () => {
                 key={employee.id}
                 {...employee}
                 onDelete={() => void handleDelete(employee.id)}
-                onEdit={() =>
-                  setModalState({ type: "edit", target: employee })
-                }
-                onView={() =>
-                  setModalState({ type: "view", target: employee })
-                }
+                onEdit={() => setModalState({ type: "edit", target: employee })}
+                onView={() => setModalState({ type: "view", target: employee })}
               />
             ))}
           </div>
         )}
 
         {modalState.type === "view" && modalState.target && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            <div className="relative w-full max-w-sm rounded-[24px] bg-white p-10 text-center transition-colors duration-300 animate-in zoom-in dark:bg-gray-900">
-              <button
-                onClick={closeModal}
-                className="absolute right-5 top-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >
-                <X size={20} />
-              </button>
-              <img
-                src={modalState.target.image}
-                className="mx-auto mb-4 h-24 w-24 rounded-full border-4 border-blue-50 object-cover dark:border-blue-900/30"
-                alt="Profile"
-              />
-              <h2 className="text-[22px] font-bold dark:text-white">
-                {modalState.target.name}
-              </h2>
-              <p className="mb-8 font-medium text-blue-600 dark:text-blue-400">
-                {modalState.target.role}
-              </p>
-              <div className="space-y-4 rounded-2xl bg-gray-50 p-6 text-left dark:bg-gray-800/50">
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400 dark:text-gray-500">
-                    Department
-                  </span>
-                  <span className="font-bold dark:text-gray-200">
-                    {modalState.target.dept}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400 dark:text-gray-500">
-                    Position
-                  </span>
-                  <span className="font-bold dark:text-gray-200">
-                    {modalState.target.position}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400 dark:text-gray-500">
-                    Salary
-                  </span>
-                  <span className="font-bold dark:text-gray-200">
-                    {modalState.target.salary}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400 dark:text-gray-500">Email</span>
-                  <span className="font-bold dark:text-gray-200">
-                    {modalState.target.email}
-                  </span>
-                </div>
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-gray-400 dark:text-gray-500">Status</span>
-                  <span className="font-bold dark:text-gray-200">
-                    {modalState.target.status}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={closeModal}
-                className="mt-8 w-full rounded-xl bg-gray-900 py-4 font-bold text-white transition-colors hover:bg-black dark:bg-blue-600 dark:hover:bg-blue-700"
-              >
-                Close Profile
-              </button>
-            </div>
-          </div>
+          <EmployeeProfileModal
+            employee={{
+              name: modalState.target.name,
+              role: modalState.target.role,
+              position: modalState.target.position,
+              department: modalState.target.dept,
+              email: modalState.target.email,
+              phone: modalState.target.phone,
+              salary: modalState.target.salary,
+              status: modalState.target.status,
+              image: modalState.target.image,
+            }}
+            onClose={closeModal}
+          />
         )}
 
         <AddEmployeeModal
@@ -578,13 +678,46 @@ const AdminTeamPage = () => {
 
       try {
         const response = await employeesApi.list();
-        const filtered = response
+        const adminName =
+          [user?.firstname, user?.lastname].filter(Boolean).join(" ") ||
+          user?.email ||
+          "Department Admin";
+        const filteredEmployees = response
           .filter((employee) =>
             user?.departmentId
               ? employee.departmentId === user.departmentId
               : employee.departmentName === user?.department,
-          )
-          .map(mapAdminTeamEmployee);
+          );
+        filteredEmployees.forEach((employee) => {
+          taskStore.seedPlaceholdersForEmployee(
+            {
+              id: employee.id,
+              email: employee.email,
+              name:
+                `${employee.firstName} ${employee.lastName}`.trim() ||
+                employee.email,
+              departmentId: employee.departmentId,
+              departmentName: employee.departmentName,
+            },
+            adminName,
+            user?.email || "",
+          );
+        });
+
+        const departmentTasks = taskStore.listForDepartment(
+          user?.departmentId,
+          user?.department,
+        );
+        const filtered = filteredEmployees.map((employee) =>
+            mapAdminTeamEmployee(
+              employee,
+              departmentTasks.filter(
+                (task) =>
+                  task.employeeId === employee.id ||
+                  task.employeeEmail === employee.email,
+              ),
+            ),
+          );
         setEmployees(filtered);
       } catch (error) {
         setEmployeesErrorMessage(
@@ -613,6 +746,35 @@ const AdminTeamPage = () => {
 
     void loadAdminEmployees();
     void loadAdminReferences();
+  }, [
+    user?.department,
+    user?.departmentId,
+    user?.email,
+    user?.firstname,
+    user?.lastname,
+  ]);
+
+  useEffect(() => {
+    const syncTasks = () => {
+      const departmentTasks = taskStore.listForDepartment(
+        user?.departmentId,
+        user?.department,
+      );
+
+      setEmployees((currentEmployees) =>
+        currentEmployees.map((employee) => ({
+          ...employee,
+          tasks: departmentTasks.filter(
+            (task) =>
+              task.employeeId === employee.id ||
+              task.employeeEmail === employee.email,
+          ),
+        })),
+      );
+    };
+
+    window.addEventListener("smart_emp_tasks_updated", syncTasks);
+    return () => window.removeEventListener("smart_emp_tasks_updated", syncTasks);
   }, [user?.department, user?.departmentId]);
 
   const query = searchQuery.trim().toLowerCase();
@@ -640,21 +802,27 @@ const AdminTeamPage = () => {
       return;
     }
 
+    const createdTask = taskStore.create({
+      employeeId: modalState.employee.id,
+      employeeEmail: modalState.employee.email,
+      employeeName: modalState.employee.name,
+      departmentId: modalState.employee.departmentId,
+      departmentName: modalState.employee.department,
+      title,
+      dueDate,
+      assignedBy:
+        [user?.firstname, user?.lastname].filter(Boolean).join(" ") ||
+        user?.email ||
+        "Department Admin",
+      assignedByEmail: user?.email || "",
+    });
+
     setEmployees((currentEmployees) =>
       currentEmployees.map((employee) =>
         employee.id === modalState.employee.id
           ? {
               ...employee,
-              tasks: [
-                {
-                  id: Date.now(),
-                  title,
-                  dueDate,
-                  status: "Planned",
-                  assignee: employee.name,
-                },
-                ...employee.tasks,
-              ],
+              tasks: [createdTask, ...employee.tasks],
             }
           : employee,
       ),
@@ -692,9 +860,11 @@ const AdminTeamPage = () => {
       departmentId: user.departmentId,
       positionId: payload.positionId,
       position: payload.position,
+      salaryRate: payload.salary.toFixed(2),
+      status: payload.status || "Active",
     });
 
-    if (payload.positionId) {
+    if (user.departmentId && payload.positionId) {
       saveInviteEmployeeDraft({
         code: response.code,
         email: payload.email,
@@ -765,7 +935,8 @@ const AdminTeamPage = () => {
               departmentId: user?.departmentId || employee.departmentId,
               department: user?.department || employee.department,
               status: payload.status,
-              attendance: payload.status === "Inactive" ? "Absent" : "In Office",
+              attendance:
+                payload.status === "Inactive" ? "Absent" : "In Office",
             }
           : employee,
       ),
@@ -774,17 +945,63 @@ const AdminTeamPage = () => {
     setModalState(null);
   };
 
+  const handleReviewTaskReport = (
+    taskId: string,
+    status: "Approved" | "Rejected",
+  ) => {
+    taskStore.reviewReport(taskId, status);
+    setEmployees((currentEmployees) =>
+      currentEmployees.map((employee) => ({
+        ...employee,
+        tasks: employee.tasks.map((task) =>
+          task.id === taskId && task.report
+            ? {
+                ...task,
+                report: {
+                  ...task.report,
+                  status,
+                  reviewedAt: new Date().toISOString(),
+                },
+              }
+            : task,
+        ),
+      })),
+    );
+    setModalState((current) =>
+      current?.type === "reports"
+        ? {
+            ...current,
+            employee: {
+              ...current.employee,
+              tasks: current.employee.tasks.map((task) =>
+                task.id === taskId && task.report
+                  ? {
+                      ...task,
+                      report: {
+                        ...task.report,
+                        status,
+                        reviewedAt: new Date().toISOString(),
+                      },
+                    }
+                  : task,
+              ),
+            },
+          }
+        : current,
+    );
+  };
+
   return (
     <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
       <main className="flex-1 p-10 overflow-y-auto">
         <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-10">
           <div>
-            <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
               My Team
             </h1>
-            <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
-              {user?.department || "Your department"} employees only.
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium">
+              {user?.department || "Your department"} employees only
             </p>
           </div>
           <button
@@ -796,30 +1013,33 @@ const AdminTeamPage = () => {
           </button>
         </header>
 
-        <div className="relative mb-8 max-w-2xl">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+        <div className="relative mb-8 max-w-md">
+          <Search
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+            size={18}
+          />
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search by name, position or email..."
-            className="w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pl-12 pr-5 py-4 text-base text-gray-900 dark:text-white outline-none shadow-sm"
+            className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none shadow-sm transition-all focus:border-blue-400 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
           />
         </div>
 
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
           {isLoadingEmployees ? (
-            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-gray-100 bg-white text-[15px] font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-gray-100 bg-white text-sm font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
               <div className="flex items-center gap-3">
                 <Loader2 size={18} className="animate-spin" />
                 Loading team members...
               </div>
             </div>
           ) : employeesErrorMessage ? (
-            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-red-100 bg-white px-6 text-center text-[15px] font-medium text-red-600 shadow-sm dark:border-red-900/40 dark:bg-gray-900 dark:text-red-400">
+            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-red-100 bg-white px-6 text-center text-sm font-medium text-red-600 shadow-sm dark:border-red-900/40 dark:bg-gray-900 dark:text-red-400">
               {employeesErrorMessage}
             </div>
           ) : filteredEmployees.length === 0 ? (
-            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-gray-100 bg-white px-6 text-center text-[15px] font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-[24px] border border-gray-100 bg-white px-6 text-center text-sm font-medium text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
               No team members found for this department.
             </div>
           ) : (
@@ -833,26 +1053,57 @@ const AdminTeamPage = () => {
                 dept={employee.department}
                 salary={formatKZT(employee.salary)}
                 image={employee.image}
-                status={employee.attendance === "Absent" ? "Inactive" : "Active"}
-                onDelete={() => window.alert("Deleting team members is not available in the admin portal.")}
+                status={
+                  employee.attendance === "Absent" ? "Inactive" : "Active"
+                }
+                onDelete={() =>
+                  window.alert(
+                    "Deleting team members is not available in the admin portal.",
+                  )
+                }
                 onEdit={() => setModalState({ type: "edit", employee })}
                 onView={() => setModalState({ type: "view", employee })}
+                onAssignTask={() => setModalState({ type: "task", employee })}
+                onViewReports={() => setModalState({ type: "reports", employee })}
+                pendingReportsCount={
+                  employee.tasks.filter(
+                    (task) => task.report?.status === "Pending",
+                  ).length
+                }
               />
             ))
           )}
         </div>
 
-        {modalState && modalState.type !== "edit" && (
+        {modalState?.type === "view" && (
+          <EmployeeProfileModal
+            employee={{
+              name: modalState.employee.name,
+              role: modalState.employee.role,
+              position: modalState.employee.position,
+              department: modalState.employee.department,
+              email: modalState.employee.email,
+              phone: modalState.employee.phone,
+              salary: formatKZT(modalState.employee.salary),
+              status:
+                modalState.employee.attendance === "Absent"
+                  ? "Inactive"
+                  : "Active",
+              image: modalState.employee.image,
+            }}
+            onClose={() => setModalState(null)}
+          />
+        )}
+
+        {modalState && modalState.type !== "edit" && modalState.type !== "view" && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
             <div className="w-full max-w-2xl rounded-[30px] border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 shadow-2xl">
               <div className="mb-6 flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-gray-900 dark:text-white">
-                    {modalState.type === "view"
-                      ? "Employee Profile"
-                      : modalState.type === "task"
-                          ? "Assign Task"
-                          : "Task Report"}
+                    {modalState.type === "task"
+                        ? "Assign Task"
+                        : "Task Reports"}
                   </h2>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     {modalState.employee.name}
@@ -866,39 +1117,6 @@ const AdminTeamPage = () => {
                   <X size={18} />
                 </button>
               </div>
-
-              {modalState.type === "view" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {[
-                    { label: "Email", value: modalState.employee.email },
-                    { label: "Phone", value: modalState.employee.phone },
-                    { label: "Department", value: modalState.employee.department },
-                    { label: "Position", value: modalState.employee.position },
-                    { label: "Location", value: modalState.employee.location },
-                    { label: "Joined", value: modalState.employee.joinedDate },
-                    { label: "Salary", value: formatKZT(modalState.employee.salary) },
-                    {
-                      label: "Status",
-                      value:
-                        modalState.employee.attendance === "Absent"
-                          ? "Inactive"
-                          : "Active",
-                    },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-2xl bg-gray-50 dark:bg-gray-800/50 p-4"
-                    >
-                      <p className="text-[11px] font-black uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-[15px] font-bold text-gray-900 dark:text-white">
-                        {item.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               {modalState.type === "task" && (
                 <form onSubmit={handleAssignTask} className="space-y-5">
@@ -922,39 +1140,87 @@ const AdminTeamPage = () => {
                       className="w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white outline-none"
                     />
                   </label>
-                  <button type="submit" className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">
+                  <button
+                    type="submit"
+                    className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white"
+                  >
                     Assign Task
                   </button>
                 </form>
               )}
 
-              {modalState.type === "report" && (
+              {modalState.type === "reports" && (
                 <div className="space-y-5">
-                  <div className="rounded-2xl bg-gray-50 dark:bg-gray-800/50 p-5">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                      Task
-                    </p>
-                    <p className="mt-2 text-[16px] font-bold text-gray-900 dark:text-white">
-                      {modalState.task.title}
-                    </p>
-                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                      Submitted {modalState.task.report?.submittedAt}
-                    </p>
-                  </div>
-                  {[
-                    { label: "Summary", value: modalState.task.report?.summary || "Not provided" },
-                    { label: "Result", value: modalState.task.report?.result || "Not provided" },
-                    { label: "Blockers", value: modalState.task.report?.blockers || "No blockers" },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
-                      <p className="text-[11px] font-black uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                        {item.value}
-                      </p>
+                  {modalState.employee.tasks.filter((task) => task.report)
+                    .length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-gray-800">
+                      No task reports submitted yet.
                     </div>
-                  ))}
+                  ) : (
+                    modalState.employee.tasks
+                      .filter((task) => task.report)
+                      .map((task) => (
+                        <div
+                          key={task.id}
+                          className="rounded-2xl border border-gray-100 p-5 dark:border-gray-800"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="text-base font-bold text-gray-900 dark:text-white">
+                                {task.title}
+                              </p>
+                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                Submitted{" "}
+                                {task.report?.submittedAt
+                                  ? new Date(
+                                      task.report.submittedAt,
+                                    ).toLocaleString()
+                                  : "recently"}
+                              </p>
+                            </div>
+                            <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
+                              {task.report?.status}
+                            </span>
+                          </div>
+                          <div className="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
+                            <p>
+                              <span className="font-bold">Summary:</span>{" "}
+                              {task.report?.summary || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-bold">Result:</span>{" "}
+                              {task.report?.result || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-bold">Blockers:</span>{" "}
+                              {task.report?.blockers || "No blockers"}
+                            </p>
+                          </div>
+                          {task.report?.status === "Pending" && (
+                            <div className="mt-4 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReviewTaskReport(task.id, "Approved")
+                                }
+                                className="rounded-xl bg-green-600 px-4 py-2 text-xs font-bold text-white"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReviewTaskReport(task.id, "Rejected")
+                                }
+                                className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-gray-900"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                  )}
                 </div>
               )}
             </div>

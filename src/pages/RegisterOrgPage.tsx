@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -6,6 +6,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   CheckIcon,
+  ChevronDown,
   ChevronRightIcon,
   Building2,
   Hash,
@@ -19,11 +20,14 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import {
   authApi,
+  citiesApi,
+  getApiErrorMessage,
   organizationApi,
   persistAuth,
+  type CityItem,
   type LegalDocumentItem,
 } from "../api";
-import { useAuth } from "../components/context/AuthContext";
+import { useAuth } from "../components/context/useAuth";
 
 const registerSchema = z
   .object({
@@ -47,7 +51,7 @@ const registerSchema = z
       .min(10, "Description is too short (min 10 chars)")
       .max(250, "Description is too long"),
 
-    cityId: z.number(),
+    cityId: z.string().min(1, "Select a city"),
     // Consents
     privacyPolicyAccepted: z
       .boolean()
@@ -62,6 +66,27 @@ const registerSchema = z
   });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
+const REGISTERED_ORGANIZATION_STORAGE_KEY = "smart_emp_registered_organization";
+
+const getRegistrationErrorMessage = (error: unknown) => {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return getApiErrorMessage(error, "Registration failed");
+  }
+
+  const response = (error as { response?: { data?: unknown } }).response;
+  const data = response?.data;
+
+  if (!data || typeof data !== "object") {
+    return getApiErrorMessage(error, "Registration failed");
+  }
+
+  const record = data as Record<string, unknown>;
+  const message = record.details ?? record.error ?? record.message;
+
+  return typeof message === "string" && message.trim()
+    ? message
+    : "Registration failed";
+};
 
 export const RegisterOrgPage = () => {
   const [step, setStep] = useState(1);
@@ -69,6 +94,9 @@ export const RegisterOrgPage = () => {
   const [apiError, setApiError] = useState<string | null>(null);
   const [showPass, setShowPass] = useState(false);
   const [consentDocs, setConsentDocs] = useState<LegalDocumentItem[]>([]);
+  const [cities, setCities] = useState<CityItem[]>([]);
+  const [isCitiesLoading, setIsCitiesLoading] = useState(true);
+  const [citiesError, setCitiesError] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [pendingCredentials, setPendingCredentials] = useState<{
     email: string;
@@ -82,13 +110,14 @@ export const RegisterOrgPage = () => {
     handleSubmit,
     trigger,
     setError,
+    setValue,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       phoneNumber: "+7",
       organizationDescription: "",
-      cityId: 1,
+      cityId: "",
       privacyPolicyAccepted: false,
       termsAndConditionsAccepted: false,
     },
@@ -97,15 +126,39 @@ export const RegisterOrgPage = () => {
   // Загрузка активных документов с бэкенда
   useEffect(() => {
     const fetchDocs = async () => {
-      try {
-        const response = await organizationApi.getActiveDocuments();
-        if (response?.data) setConsentDocs(response.data);
-      } catch (e) {
-        console.error("Failed to load consent documents", e);
+      const [documentsResult, citiesResult] = await Promise.allSettled([
+        organizationApi.getActiveDocuments(),
+        citiesApi.list(),
+      ]);
+
+      if (documentsResult.status === "fulfilled") {
+        setConsentDocs(documentsResult.value);
+      } else {
+        console.error("Failed to load legal documents", documentsResult.reason);
       }
+
+      if (citiesResult.status === "fulfilled") {
+        const cityItems = citiesResult.value;
+        setCities(cityItems);
+
+        if (cityItems.length > 0) {
+          setValue("cityId", cityItems[0].id);
+          setCitiesError("");
+        } else {
+          setCitiesError(
+            "No cities available. Please add cities in the database.",
+          );
+        }
+      } else {
+        console.error("Failed to load cities", citiesResult.reason);
+        setCitiesError("Failed to load cities from the backend.");
+      }
+
+      setIsCitiesLoading(false);
     };
+
     fetchDocs();
-  }, []);
+  }, [setValue]);
 
   const handleNextStep = async () => {
     const isStepValid = await trigger([
@@ -120,23 +173,59 @@ export const RegisterOrgPage = () => {
   };
 
   const onSubmit = async (data: RegisterFormValues) => {
+    if (!hasCities) {
+      setApiError("No cities available. Please add cities in the database.");
+      return;
+    }
+
     setIsLoading(true);
     setApiError(null);
 
     try {
-      await organizationApi.create(data);
+      const organizationPayload = {
+        firstname: data.firstname,
+        lastname: data.lastname,
+        email: data.email,
+        phoneNumber: data.phoneNumber,
+        password: data.password,
+        organizationName: data.organizationName,
+        vat: data.vat,
+        streetAddress: data.streetAddress,
+        organizationDescription: data.organizationDescription,
+        privacyPolicyAccepted: data.privacyPolicyAccepted,
+        termsAndConditionsAccepted: data.termsAndConditionsAccepted,
+      };
+      const { cityId } = data;
+      const numericCityId = Number(cityId);
+      const selectedCityIndex = cities.findIndex((city) => city.id === cityId);
+      const selectedCity = cities[selectedCityIndex];
+      const registrationCityId = Number.isInteger(numericCityId)
+        ? numericCityId
+        : selectedCityIndex + 1;
+
+      await organizationApi.create({
+        ...organizationPayload,
+        cityId: registrationCityId,
+      });
+      localStorage.setItem(
+        REGISTERED_ORGANIZATION_STORAGE_KEY,
+        JSON.stringify({
+          organizationName: data.organizationName,
+          email: data.email,
+          organizationDescription: data.organizationDescription,
+          city: selectedCity?.name || "",
+          phoneNumber: data.phoneNumber,
+        }),
+      );
       setPendingCredentials({
         email: data.email,
         password: data.password,
       });
       setStep(3);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // 1. Извлекаем текст ошибки из разных возможных полей бэкенда
       // Твой Go-код использует "details" для валидации и "error" для общих ошибок
-      const responseData = error.response?.data;
-      const serverMessage =
-        responseData?.details || responseData?.error || "Registration failed";
-
+      const serverMessage = getRegistrationErrorMessage(error);
       const msg = serverMessage.toLowerCase();
 
       // Функция для установки ошибки в конкретное поле и возврата на нужный шаг
@@ -216,8 +305,19 @@ export const RegisterOrgPage = () => {
   const getDocUrl = (type: string) => {
     const aliases =
       type === "PrivacyPolicy"
-        ? ["privacypolicy", "privacypolicydocument", "privacy"]
-        : ["termsandconditions", "termsconditions", "terms"];
+        ? [
+            "privacypolicy",
+            "privacypolicydocument",
+            "privacy",
+            "privacydocument",
+          ]
+        : [
+            "termsandconditions",
+            "termsconditions",
+            "terms",
+            "termsofuse",
+            "termsdocument",
+          ];
 
     const matchedDocument = consentDocs.find((document) => {
       const keys = [
@@ -250,16 +350,31 @@ export const RegisterOrgPage = () => {
     }
   };
 
+  const hasCities = cities.length > 0;
+  const privacyPolicyUrl = getDocUrl("PrivacyPolicy");
+  const termsAndConditionsUrl = getDocUrl("TermsAndConditions");
+  const handleDocumentClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    url: string,
+  ) => {
+    event.stopPropagation();
+
+    if (url === "#") {
+      event.preventDefault();
+      setApiError("Legal document is not available from the backend yet.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 py-12 px-4 transition-all">
       <div className="max-w-md mx-auto text-center mb-8">
         <div className="flex justify-center mb-4">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-            HR
+          <div className="w-12 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+            EMP
           </div>
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-          HRMS Registration
+          Smart EMP Registration
         </h1>
         <p className="text-gray-500 text-sm mt-2">
           Setup your organization workspace
@@ -479,6 +594,49 @@ export const RegisterOrgPage = () => {
               )}
             </div>
 
+            <div className="space-y-1">
+              <label className="ml-1 text-[11px] font-black uppercase tracking-wider text-gray-400">
+                City
+              </label>
+              <div className="relative rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 transition focus-within:ring-2 focus-within:ring-blue-500 dark:bg-gray-800 dark:ring-gray-700">
+                <MapPin
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-blue-600 dark:text-blue-400"
+                  size={18}
+                />
+                <select
+                  {...register("cityId")}
+                  disabled={isCitiesLoading || !hasCities}
+                  className="h-14 w-full cursor-pointer appearance-none rounded-2xl border-none bg-transparent pl-12 pr-12 text-sm font-bold text-gray-900 outline-none disabled:cursor-wait disabled:text-gray-400 dark:text-white"
+                >
+                  {isCitiesLoading ? (
+                    <option value="">Loading cities...</option>
+                  ) : hasCities ? (
+                    cities.map((city) => (
+                      <option key={city.id} value={city.id}>
+                        {city.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No cities available</option>
+                  )}
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={18}
+                />
+              </div>
+              {citiesError && (
+                <p className="ml-1 text-[10px] font-semibold text-red-500">
+                  {citiesError}
+                </p>
+              )}
+              {errors.cityId && (
+                <p className="text-[10px] text-red-500 font-bold ml-1">
+                  {errors.cityId.message}
+                </p>
+              )}
+            </div>
+
             {/* Consents Section */}
             <div className="space-y-3 pt-2">
               <div className="flex items-start gap-3">
@@ -494,11 +652,17 @@ export const RegisterOrgPage = () => {
                 >
                   I agree to the{" "}
                   <a
-                    href={getDocUrl("PrivacyPolicy")}
+                    href={privacyPolicyUrl}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    className="text-blue-600 font-bold hover:underline"
+                    onClick={(event) =>
+                      handleDocumentClick(event, privacyPolicyUrl)
+                    }
+                    className={`font-bold hover:underline ${
+                      privacyPolicyUrl === "#"
+                        ? "text-gray-400"
+                        : "text-blue-600"
+                    }`}
                   >
                     Privacy Policy
                   </a>
@@ -523,11 +687,17 @@ export const RegisterOrgPage = () => {
                 >
                   I agree to the{" "}
                   <a
-                    href={getDocUrl("TermsAndConditions")}
+                    href={termsAndConditionsUrl}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    className="text-blue-600 font-bold hover:underline"
+                    onClick={(event) =>
+                      handleDocumentClick(event, termsAndConditionsUrl)
+                    }
+                    className={`font-bold hover:underline ${
+                      termsAndConditionsUrl === "#"
+                        ? "text-gray-400"
+                        : "text-blue-600"
+                    }`}
                   >
                     Terms and Conditions
                   </a>
@@ -630,7 +800,7 @@ export const RegisterOrgPage = () => {
             to="/login"
             className="text-blue-600 font-bold hover:underline ml-1"
           >
-            Log In
+            Sign In
           </Link>
         </p>
       </div>

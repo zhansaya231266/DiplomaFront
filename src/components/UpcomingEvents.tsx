@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CalendarDays,
   Pencil,
@@ -12,7 +12,7 @@ import {
   type EventItem,
   type UpdateEventPayload,
 } from "../api";
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import { normalizeRole } from "../shared/utils/roles";
 
 type EventFormState = {
@@ -93,6 +93,32 @@ export const UpcomingEvents = () => {
 
   const canCreate = role === "SuperAdmin" || role === "Admin";
   const departmentId = role === "Admin" ? user?.departmentId || null : null;
+  const canSeeEvent = useCallback((event: EventItem) => {
+    const creatorRole = normalizeRole(event.createdByRole);
+
+    if (role === "SuperAdmin") {
+      return true;
+    }
+
+    if (creatorRole === "SuperAdmin" || event.scope === "global") {
+      return true;
+    }
+
+    if (role === "Admin") {
+      return (
+        creatorRole === "Admin" &&
+        (event.createdBy === user?.id ||
+          event.createdBy === user?.email ||
+          event.departmentId === user?.departmentId)
+      );
+    }
+
+    return (
+      creatorRole === "Admin" &&
+      event.departmentId &&
+      event.departmentId === user?.departmentId
+    );
+  }, [role, user?.departmentId, user?.email, user?.id]);
 
   const sortEvents = (items: EventItem[]) =>
     [...items].sort(
@@ -100,13 +126,13 @@ export const UpcomingEvents = () => {
         new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime(),
     );
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
       const upcoming = await eventsApi.getUpcoming();
-      setEvents(sortEvents(upcoming));
+      setEvents(sortEvents(upcoming.filter(canSeeEvent)));
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "Failed to load events",
@@ -114,11 +140,11 @@ export const UpcomingEvents = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [canSeeEvent]);
 
   useEffect(() => {
     void loadEvents();
-  }, []);
+  }, [loadEvents]);
 
   const resetForm = () => {
     setEditingEvent(null);
@@ -223,14 +249,14 @@ export const UpcomingEvents = () => {
   return (
     <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-colors duration-300 overflow-visible">
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+        <h3 className="text-base font-bold text-gray-900 dark:text-white">
           Upcoming Events
         </h3>
         {canCreate && (
           <button
             type="button"
             onClick={openCreateForm}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-bold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 transition-colors shadow-sm"
             title="Add event"
           >
             <Plus size={16} />
@@ -263,7 +289,7 @@ export const UpcomingEvents = () => {
             onChange={(e) =>
               setFormState((prev) => ({ ...prev, title: e.target.value }))
             }
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-[14px] outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Event title"
           />
 
@@ -277,7 +303,7 @@ export const UpcomingEvents = () => {
               }))
             }
             rows={4}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-[14px] outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             placeholder="Description"
           />
 
@@ -296,7 +322,7 @@ export const UpcomingEvents = () => {
                     startsAt: e.target.value,
                   }))
                 }
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-[14px] outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div className="space-y-2">
@@ -310,7 +336,7 @@ export const UpcomingEvents = () => {
                 onChange={(e) =>
                   setFormState((prev) => ({ ...prev, endsAt: e.target.value }))
                 }
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-[14px] outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -325,14 +351,14 @@ export const UpcomingEvents = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors"
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-colors"
             >
               {editingEvent ? "Save" : "Create"}
             </button>
             <button
               type="button"
               onClick={resetForm}
-              className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors"
+              className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-colors"
             >
               Cancel
             </button>
@@ -367,7 +393,7 @@ export const UpcomingEvents = () => {
                   <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-tight">
                     {month}
                   </span>
-                  <span className="text-[15px] font-bold text-gray-900 dark:text-white leading-none mt-0.5">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white leading-none mt-0.5">
                     {date}
                   </span>
                 </div>
@@ -375,10 +401,10 @@ export const UpcomingEvents = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[13px] font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      <p className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                         {event.title}
                       </p>
-                      <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-2">
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-2">
                         {event.description}
                       </p>
                     </div>
@@ -389,7 +415,7 @@ export const UpcomingEvents = () => {
                           <button
                             type="button"
                             onClick={() => openEditForm(event)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-[12px] font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
                             title="Edit"
                           >
                             <Pencil size={15} />
@@ -400,7 +426,7 @@ export const UpcomingEvents = () => {
                           <button
                             type="button"
                             onClick={() => void handleDelete(event.id)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-[12px] font-bold text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/30"
                             title="Delete"
                           >
                             <Trash2 size={15} />

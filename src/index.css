@@ -5,13 +5,51 @@
 
 :root {
   font-family: 'Inter', sans-serif;
+  font-size: 16px;
 }
 
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body * {
+  font-family: inherit;
+}
+
+:where(h1) {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+:where(h2) {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+}
+
+:where(h3) {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+:where(h4) {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+:where(p, li, td, th, button, input, optgroup, select, textarea, a, label) {
+  line-height: 1.5;
+}
+
+:where(small) {
+  font-size: 12px;
 }
 
 button, input, optgroup, select, textarea {

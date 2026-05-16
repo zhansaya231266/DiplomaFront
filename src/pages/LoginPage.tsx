@@ -3,9 +3,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { EyeIcon, EyeOffIcon, LockIcon, MailIcon } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi, persistAuth } from "../api";
-import { useAuth } from "../components/context/AuthContext";
+import { useAuth } from "../components/context/useAuth";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -18,7 +18,11 @@ export const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const { setUser } = useAuth();
+  const fromPath =
+    (location.state as { from?: { pathname?: string } } | null)?.from
+      ?.pathname || "/dashboard";
 
   const {
     register,
@@ -35,7 +39,7 @@ export const LoginPage = () => {
       const { token, user, refreshToken } = await authApi.login(data);
       persistAuth(token, user, refreshToken);
       setUser(user);
-      navigate("/dashboard");
+      navigate(fromPath, { replace: true });
     } catch (error) {
       setApiError(
         error instanceof Error ? error.message : "Failed to sign in",
@@ -46,15 +50,15 @@ export const LoginPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col justify-center items-center p-4 transition-colors">
       <div className="flex items-center gap-2 mb-4">
-        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-          HR
+        <div className="w-12 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+          EMP
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          HRMS Platform
+          Smart EMP
         </h1>
       </div>
       <p className="text-gray-500 dark:text-gray-400 mb-8">
-        Sign in to your account
+        Sign In to your account
       </p>
 
       <div className="bg-white dark:bg-gray-900 w-full max-w-md p-8 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-xl shadow-blue-500/5">

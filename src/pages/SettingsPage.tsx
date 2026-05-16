@@ -1,230 +1,526 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
+  Briefcase,
   Building2,
-  Calculator,
-  Clock,
-  Save,
-  Globe,
-  Mail,
-  Percent,
+  CalendarDays,
+  Loader2,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import {
+  calendarApi,
+  referenceApi,
+  type CalendarSummaryResponse,
+  type DepartmentItem,
+  type PositionItem,
+} from "../api";
+import { useAuth } from "../components/context/useAuth";
+import { normalizeRole } from "../shared/utils/roles";
 
 export const SettingsPage = () => {
-  const [activeTab, setActiveTab] = useState("company");
-  const [workMode, setWorkMode] = useState("full-time");
+  const { user } = useAuth();
+  const role = normalizeRole(user?.role);
+  const isSuperAdmin = role === "SuperAdmin";
+  const isAdmin = role === "Admin";
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [positions, setPositions] = useState<PositionItem[]>([]);
+  const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [newPositionName, setNewPositionName] = useState("");
+  const [isStructureLoading, setIsStructureLoading] = useState(true);
+  const [isStructureSaving, setIsStructureSaving] = useState(false);
+  const [structureError, setStructureError] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    new Date().toISOString().slice(0, 7),
+  );
+  const [calendarSummary, setCalendarSummary] =
+    useState<CalendarSummaryResponse | null>(null);
+  const [calendarError, setCalendarError] = useState("");
+  const [isCalendarLoading, setIsCalendarLoading] = useState(true);
+  const [isCalendarSaving, setIsCalendarSaving] = useState(false);
+
+  const loadOrganizationStructure = useCallback(async () => {
+    setIsStructureLoading(true);
+    setStructureError("");
+
+    try {
+      const [departmentItems, positionItems] = await Promise.all([
+        referenceApi.listDepartments(),
+        referenceApi.listPositions(),
+      ]);
+      setDepartments(departmentItems);
+      setPositions(
+        isAdmin
+          ? positionItems.filter(
+              (position) =>
+                !position.departmentId ||
+                position.departmentId === user?.departmentId,
+            )
+          : positionItems,
+      );
+    } catch (error) {
+      setStructureError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load organization structure",
+      );
+    } finally {
+      setIsStructureLoading(false);
+    }
+  }, [isAdmin, user?.departmentId]);
+
+  useEffect(() => {
+    void loadOrganizationStructure();
+  }, [loadOrganizationStructure]);
+
+  const loadCalendarSummary = useCallback(async (month = calendarMonth) => {
+    setIsCalendarLoading(true);
+    setCalendarError("");
+
+    try {
+      const summary = await calendarApi.getSummary(month);
+      setCalendarSummary(summary);
+    } catch (error) {
+      setCalendarError(
+        error instanceof Error ? error.message : "Failed to load calendar",
+      );
+    } finally {
+      setIsCalendarLoading(false);
+    }
+  }, [calendarMonth]);
+
+  useEffect(() => {
+    void loadCalendarSummary(calendarMonth);
+  }, [calendarMonth, loadCalendarSummary]);
+
+  const handleCreateDepartment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const departmentName = newDepartmentName.trim();
+    if (!departmentName) return;
+
+    setIsStructureSaving(true);
+    setStructureError("");
+
+    try {
+      const created = await referenceApi.createDepartment({ departmentName });
+      setDepartments((current) => [...current, created]);
+      setNewDepartmentName("");
+    } catch (error) {
+      setStructureError(
+        error instanceof Error ? error.message : "Failed to create department",
+      );
+    } finally {
+      setIsStructureSaving(false);
+    }
+  };
+
+  const handleCreatePosition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const positionName = newPositionName.trim();
+    if (!positionName) return;
+
+    setIsStructureSaving(true);
+    setStructureError("");
+
+    try {
+      const created = await referenceApi.createPosition({
+        positionName,
+        departmentId: isAdmin ? user?.departmentId : undefined,
+      });
+      setPositions((current) => [...current, created]);
+      setNewPositionName("");
+    } catch (error) {
+      setStructureError(
+        error instanceof Error ? error.message : "Failed to create position",
+      );
+    } finally {
+      setIsStructureSaving(false);
+    }
+  };
+
+  const handleDeleteDepartment = async (department: DepartmentItem) => {
+    if (!window.confirm(`Delete department "${department.name}"?`)) return;
+
+    setIsStructureSaving(true);
+    setStructureError("");
+
+    try {
+      await referenceApi.deleteDepartment(department.id);
+      setDepartments((current) =>
+        current.filter((item) => item.id !== department.id),
+      );
+    } catch (error) {
+      setStructureError(
+        error instanceof Error ? error.message : "Failed to delete department",
+      );
+    } finally {
+      setIsStructureSaving(false);
+    }
+  };
+
+  const handleDeletePosition = async (position: PositionItem) => {
+    if (!window.confirm(`Delete position "${position.name}"?`)) return;
+
+    setIsStructureSaving(true);
+    setStructureError("");
+
+    try {
+      await referenceApi.deletePosition(position.id);
+      setPositions((current) =>
+        current.filter((item) => item.id !== position.id),
+      );
+    } catch (error) {
+      setStructureError(
+        error instanceof Error ? error.message : "Failed to delete position",
+      );
+    } finally {
+      setIsStructureSaving(false);
+    }
+  };
+
+  const handleAddCalendarDay = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+    const date = String(formData.get("date") || "");
+    const type = String(formData.get("type") || "") as "HOLIDAY" | "WORKDAY";
+    const name = String(formData.get("name") || "").trim();
+
+    if (!date || !type) {
+      setCalendarError("Date and type are required.");
+      return;
+    }
+
+    setIsCalendarSaving(true);
+    setCalendarError("");
+
+    try {
+      await calendarApi.addDay({ date, type, name });
+      form.reset();
+      await loadCalendarSummary(calendarMonth);
+    } catch (error) {
+      setCalendarError(
+        error instanceof Error ? error.message : "Failed to save calendar day",
+      );
+    } finally {
+      setIsCalendarSaving(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
-      <main className="flex-1 p-10 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto px-6 py-8 lg:px-8">
         {/* HEADER */}
-        <header className="flex justify-between items-end mb-8 text-left">
+        <header className="mb-6 flex items-end justify-between text-left">
           <div>
-            <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
               Settings
             </h1>
-            <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
-              Configure your HRMS platform and system preferences
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium">
+              Configure Smart EMP and system preferences
             </p>
           </div>
-          <button className="px-8 py-3 bg-blue-600 text-white text-[14px] font-bold rounded-2xl hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 dark:shadow-none">
-            <Save size={18} /> Save Changes
-          </button>
         </header>
 
-        <div className="flex gap-8">
-          {/* LEFT COLUMN: NAVIGATION */}
-          <div className="w-1/4">
-            <div className="bg-white dark:bg-gray-900 rounded-[28px] border border-gray-100 dark:border-gray-800 p-4 shadow-sm">
-              {[
-                { id: "company", label: "Company Info", icon: Building2 },
-                { id: "payroll", label: "Payroll Logic", icon: Calculator },
-                { id: "work", label: "Work Schedule", icon: Clock },
-              ].map((item) => (
+        <div className="max-w-6xl">
+          <div className="space-y-5">
+            {/* 1. ORGANIZATION STRUCTURE */}
+            <section className="bg-white dark:bg-gray-900 rounded-[32px] border border-gray-100 dark:border-gray-800 p-8 shadow-sm text-left">
+              <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Briefcase className="text-blue-600" size={22} />
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                      Organization Structure
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {isSuperAdmin
+                        ? "Manage departments and positions used across employees."
+                        : "Manage positions for your department."}
+                    </p>
+                  </div>
+                </div>
                 <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl text-[14px] font-bold transition-all mb-1 ${
-                    activeTab === item.id
-                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 shadow-sm"
-                      : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
+                  type="button"
+                  onClick={() => void loadOrganizationStructure()}
+                  disabled={isStructureLoading || isStructureSaving}
+                  className="rounded-xl border border-gray-100 px-4 py-2.5 text-sm font-bold text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-60 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800"
                 >
-                  <item.icon size={20} />
-                  {item.label}
+                  {isStructureLoading ? "Loading..." : "Refresh"}
                 </button>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {/* RIGHT COLUMN: FORMS */}
-          <div className="w-3/4 space-y-6">
-            {/* 1. COMPANY INFORMATION */}
-            <section className="bg-white dark:bg-gray-900 rounded-[32px] border border-gray-100 dark:border-gray-800 p-8 shadow-sm text-left">
-              <div className="flex items-center gap-3 mb-6">
-                <Building2 className="text-blue-600" size={22} />
-                <h3 className="text-[18px] font-black text-gray-900 dark:text-white">
-                  Company Information
-                </h3>
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                    Company Name
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="Acme Corporation"
-                    className="w-full px-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                  />
+              {structureError && (
+                <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                  {structureError}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                    Official Email
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      size={16}
-                      className="absolute left-5 top-4 text-gray-400"
-                    />
-                    <input
-                      type="email"
-                      defaultValue="hr@acme.com"
-                      className="w-full pl-12 pr-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold outline-none dark:text-white"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                    Website
-                  </label>
-                  <div className="relative">
-                    <Globe
-                      size={16}
-                      className="absolute left-5 top-4 text-gray-400"
-                    />
-                    <input
-                      type="text"
-                      defaultValue="www.acme.com"
-                      className="w-full pl-12 pr-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold outline-none dark:text-white"
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
+              )}
 
-            {/* 2. PAYROLL LOGIC & FORMULA */}
-            <section className="bg-white dark:bg-gray-900 rounded-[32px] border border-gray-100 dark:border-gray-800 p-8 shadow-sm text-left">
-              <div className="flex items-center gap-3 mb-6">
-                <Calculator className="text-green-600" size={22} />
-                <h3 className="text-[18px] font-black text-gray-900 dark:text-white">
-                  Payroll Formula & Tax
-                </h3>
-              </div>
-              <div className="space-y-6">
-                <div className="p-5 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/20">
-                  <label className="text-[13px] font-bold text-blue-600 dark:text-blue-400 uppercase flex items-center gap-2 mb-3">
-                    Active Formula
-                  </label>
-                  <p className="text-[16px] font-black text-gray-800 dark:text-white font-mono">
-                    Net Salary = (Base Salary + Bonuses) - (Tax Rate + Social
-                    Deductions)
-                  </p>
+              {isStructureLoading ? (
+                <div className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-sm font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                  <Loader2 size={18} className="animate-spin" />
+                  Loading organization structure...
                 </div>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                      Income Tax Rate (%)
-                    </label>
-                    <div className="relative">
-                      <Percent
-                        size={16}
-                        className="absolute right-5 top-4 text-gray-400"
-                      />
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  {isSuperAdmin && (
+                  <div className="rounded-[24px] border border-gray-100 p-5 dark:border-gray-800">
+                    <div className="mb-5 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-base font-black text-gray-900 dark:text-white">
+                          Departments
+                        </h4>
+                        <p className="mt-1 text-xs font-medium text-gray-400">
+                          {departments.length} total
+                        </p>
+                      </div>
+                      <Building2 size={20} className="text-blue-600" />
+                    </div>
+
+                    <form
+                      onSubmit={handleCreateDepartment}
+                      className="mb-5 flex gap-3"
+                    >
                       <input
-                        type="number"
-                        defaultValue="10"
-                        className="w-full px-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold outline-none dark:text-white"
+                        value={newDepartmentName}
+                        onChange={(event) =>
+                          setNewDepartmentName(event.target.value)
+                        }
+                        placeholder="New department name"
+                        className="min-w-0 flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 outline-none ring-1 ring-transparent transition focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
                       />
+                      <button
+                        type="submit"
+                        disabled={
+                          isStructureSaving || !newDepartmentName.trim()
+                        }
+                        className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <Plus size={16} /> Add
+                      </button>
+                    </form>
+
+                    <div className="space-y-3">
+                      {departments.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-gray-800">
+                          No departments yet.
+                        </div>
+                      ) : (
+                        departments.map((department) => (
+                          <div
+                            key={department.id}
+                            className="flex items-center justify-between gap-3 rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800/50"
+                          >
+                            <p className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">
+                              {department.name}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleDeleteDepartment(department)
+                              }
+                              disabled={isStructureSaving}
+                              className="rounded-xl p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20"
+                              title="Delete department"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[13px] font-bold text-gray-400 uppercase ml-1">
-                      Pension Fund (OPV %)
-                    </label>
-                    <input
-                      type="number"
-                      defaultValue="10"
-                      className="w-full px-5 py-3.5 bg-gray-50 dark:bg-gray-800 border-none rounded-2xl text-[14px] font-bold outline-none dark:text-white"
-                    />
+                  )}
+
+                  <div className="rounded-[24px] border border-gray-100 p-5 dark:border-gray-800">
+                    <div className="mb-5 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-base font-black text-gray-900 dark:text-white">
+                          Positions
+                        </h4>
+                        <p className="mt-1 text-xs font-medium text-gray-400">
+                          {positions.length} total
+                          {isAdmin && user?.department
+                            ? ` in ${user.department}`
+                            : ""}
+                        </p>
+                      </div>
+                      <Briefcase size={20} className="text-green-600" />
+                    </div>
+
+                    <form
+                      onSubmit={handleCreatePosition}
+                      className="mb-5 flex gap-3"
+                    >
+                      <input
+                        value={newPositionName}
+                        onChange={(event) =>
+                          setNewPositionName(event.target.value)
+                        }
+                        placeholder="New position name"
+                        className="min-w-0 flex-1 rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 outline-none ring-1 ring-transparent transition focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          isStructureSaving ||
+                          !newPositionName.trim() ||
+                          (isAdmin && !user?.departmentId)
+                        }
+                        className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <Plus size={16} /> Add
+                      </button>
+                    </form>
+
+                    <div className="space-y-3">
+                      {positions.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-gray-800">
+                          No positions yet.
+                        </div>
+                      ) : (
+                        positions.map((position) => (
+                          <div
+                            key={position.id}
+                            className="flex items-center justify-between gap-3 rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-800/50"
+                          >
+                            <p className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">
+                              {position.name}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleDeletePosition(position)
+                              }
+                              disabled={isStructureSaving}
+                              className="rounded-xl p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20"
+                              title="Delete position"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </section>
 
-            {/* 3. WORK SCHEDULE */}
+            {/* 2. WORKING CALENDAR */}
             <section className="bg-white dark:bg-gray-900 rounded-[32px] border border-gray-100 dark:border-gray-800 p-8 shadow-sm text-left">
-              <div className="flex items-center gap-3 mb-6">
-                <Clock className="text-orange-500" size={22} />
-                <h3 className="text-[18px] font-black text-gray-900 dark:text-white">
-                  Work Schedule Type
-                </h3>
+              <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <CalendarDays className="text-blue-600" size={22} />
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                      Working Calendar
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {isSuperAdmin
+                        ? "Manage holidays and weekend workday overrides."
+                        : "View holidays and workday overrides."}
+                    </p>
+                  </div>
+                </div>
+                <input
+                  type="month"
+                  value={calendarMonth}
+                  onChange={(event) => setCalendarMonth(event.target.value)}
+                  className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-sm font-bold text-gray-700 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                />
               </div>
-              <div className="flex gap-4 mb-8">
-                {["full-time", "part-time", "flexible"].map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setWorkMode(mode)}
-                    className={`px-6 py-3 rounded-xl text-[13px] font-black uppercase tracking-wider transition-all ${
-                      workMode === mode
-                        ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-400 hover:text-gray-600"
-                    }`}
+
+              {calendarError && (
+                <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-400">
+                  {calendarError}
+                </div>
+              )}
+
+              <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  {
+                    label: "Working Days",
+                    value: calendarSummary?.workingDays ?? 0,
+                  },
+                  { label: "Weekends", value: calendarSummary?.weekends ?? 0 },
+                  { label: "Holidays", value: calendarSummary?.holidays ?? 0 },
+                  {
+                    label: "Overrides",
+                    value: calendarSummary?.workdayOverrides ?? 0,
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50"
                   >
-                    {mode.replace("-", " ")}
-                  </button>
+                    <p className="text-2xl font-black text-gray-900 dark:text-white">
+                      {isCalendarLoading ? "-" : item.value}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      {item.label}
+                    </p>
+                  </div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center px-2">
-                    <span className="text-[14px] font-bold text-gray-500">
-                      Standard Daily Hours
-                    </span>
-                    <span className="text-[14px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-lg">
-                      {workMode === "full-time"
-                        ? "8.0 hrs"
-                        : workMode === "part-time"
-                          ? "4.0 hrs"
-                          : "Custom"}
-                    </span>
-                  </div>
+              {isSuperAdmin && (
+                <form
+                  onSubmit={handleAddCalendarDay}
+                  className="mb-6 grid grid-cols-1 md:grid-cols-[1fr_1fr_1.4fr_auto] gap-3"
+                >
                   <input
-                    type="range"
-                    min="1"
-                    max="12"
-                    step="0.5"
-                    className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    name="date"
+                    type="date"
+                    className="rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 outline-none dark:bg-gray-800 dark:text-white"
                   />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-                    (day) => (
-                      <div
-                        key={day}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-[11px] font-black border ${
-                          ["Sat", "Sun"].includes(day)
-                            ? "border-gray-100 text-gray-300 dark:border-gray-800"
-                            : "border-blue-100 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:border-blue-900/30"
-                        }`}
-                      >
-                        {day}
-                      </div>
-                    ),
-                  )}
-                </div>
+                  <select
+                    name="type"
+                    defaultValue="HOLIDAY"
+                    className="rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 outline-none dark:bg-gray-800 dark:text-white"
+                  >
+                    <option value="HOLIDAY">Holiday</option>
+                    <option value="WORKDAY">Workday override</option>
+                  </select>
+                  <input
+                    name="name"
+                    placeholder="Name"
+                    className="rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900 outline-none dark:bg-gray-800 dark:text-white"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isCalendarSaving}
+                    className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Add Day
+                  </button>
+                </form>
+              )}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+                {(calendarSummary?.days || []).slice(0, 35).map((day) => (
+                  <div
+                    key={day.date}
+                    className={`rounded-2xl px-3 py-3 ${
+                      day.isWorking
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
+                        : "bg-gray-50 text-gray-500 dark:bg-gray-800/50 dark:text-gray-400"
+                    }`}
+                  >
+                    <p className="text-xs font-black text-gray-900 dark:text-white">
+                      {day.date.slice(8, 10)}
+                    </p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wide">
+                      {day.type || day.weekday}
+                    </p>
+                    {day.name && (
+                      <p className="mt-2 truncate text-xs font-semibold">
+                        {day.name}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </section>
           </div>

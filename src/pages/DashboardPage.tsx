@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { UpcomingEvents } from "../components/UpcomingEvents";
 import {
@@ -25,11 +25,20 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { useAuth } from "../components/context/AuthContext";
+import { useAuth } from "../components/context/useAuth";
 import { useNotifications } from "../hooks/useNotifications";
 import { normalizeRole } from "../shared/utils/roles";
 import { getDepartmentOverview } from "../shared/constants/adminPanel";
-import { employeeTasks } from "../shared/constants/employeePanel";
+import {
+  getApiErrorMessage,
+  profileApi,
+  type EmployeeItem,
+  type UserProfileResponse,
+} from "../api";
+import {
+  taskStore,
+  type StoredDepartmentTask,
+} from "../shared/utils/taskStore";
 
 const attendanceData = [
   { name: "Mon", present: 230, absent: 5, late: 12 },
@@ -70,10 +79,29 @@ const formatRelativeTime = (isoDate: string) => {
   return `${diffInDays} day${diffInDays === 1 ? "" : "s"} ago`;
 };
 
+const mapProfileToEmployee = (profile: UserProfileResponse): EmployeeItem => ({
+  id: profile.employeeId || profile.id,
+  orgId: profile.organizationId,
+  userId: profile.id,
+  departmentId: profile.departmentId || "",
+  positionId: "",
+  role: profile.role || "EMPLOYEE",
+  salaryRate: profile.salary || "0",
+  status: profile.verificationStatus || "Active",
+  firstName: profile.firstname,
+  lastName: profile.lastname,
+  email: profile.email,
+  phoneNumber: profile.phoneNumber || profile.phone || "",
+  departmentName: profile.department,
+  positionName: profile.position,
+});
+
 const EmployeeDashboard = () => {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState(employeeTasks);
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [employee, setEmployee] = useState<EmployeeItem | null>(null);
+  const [tasks, setTasks] = useState<StoredDepartmentTask[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [taskError, setTaskError] = useState("");
   const {
     notifications,
     isLoading: isLoadingNotifications,
@@ -85,15 +113,72 @@ const EmployeeDashboard = () => {
   } = useNotifications({ limit: 6, pollIntervalMs: 30000 });
   const hasUnreadNotifications = notifications.some((item) => !item.is_read);
 
-  const submitReport = (taskId: number) => {
+  useEffect(() => {
+    let activeEmployee: EmployeeItem | null = null;
+
+    const loadEmployeeTasks = async () => {
+      setTaskError("");
+
+      try {
+        const profile = await profileApi.getMe();
+        const currentEmployee = mapProfileToEmployee(profile);
+        setEmployee(currentEmployee);
+        activeEmployee = currentEmployee;
+
+        if (!currentEmployee.id) {
+          setTasks([]);
+          return;
+        }
+
+        taskStore.seedPlaceholdersForEmployee(
+          {
+            id: currentEmployee.id,
+            email: currentEmployee.email,
+            name:
+              `${currentEmployee.firstName} ${currentEmployee.lastName}`.trim() ||
+              currentEmployee.email,
+            departmentId: currentEmployee.departmentId,
+            departmentName: currentEmployee.departmentName,
+          },
+          "Department Admin",
+          "",
+        );
+        setTasks(
+          taskStore.listForEmployee(currentEmployee.id, currentEmployee.email),
+        );
+      } catch (error) {
+        setTaskError(getApiErrorMessage(error, "Failed to load tasks"));
+      }
+    };
+
+    void loadEmployeeTasks();
+
+    const syncTasks = () => {
+      if (activeEmployee) {
+        setTasks(
+          taskStore.listForEmployee(activeEmployee.id, activeEmployee.email),
+        );
+      }
+    };
+
+    window.addEventListener("smart_emp_tasks_updated", syncTasks);
+    return () =>
+      window.removeEventListener("smart_emp_tasks_updated", syncTasks);
+  }, []);
+
+  const submitReport = (taskId: string) => {
     const report = drafts[taskId]?.trim();
     if (!report) return;
 
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId ? { ...task, status: "Completed", report } : task,
-      ),
-    );
+    taskStore.submitReport(taskId, {
+      summary: report,
+      result: report,
+      blockers: "No blockers",
+    });
+    if (employee) {
+      setTasks(taskStore.listForEmployee(employee.id, employee.email));
+    }
+    setDrafts((currentDrafts) => ({ ...currentDrafts, [taskId]: "" }));
   };
 
   return (
@@ -101,12 +186,12 @@ const EmployeeDashboard = () => {
       <Sidebar />
       <main className="flex-1 p-8 overflow-y-auto">
         <header className="mb-8">
-          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
             Dashboard
           </h1>
-          <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
+          <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">
             Personal workspace for{" "}
-            {user?.firstname || user?.email || "employee"}.
+            {user?.firstname || user?.email || "employee"}
           </p>
         </header>
 
@@ -118,58 +203,72 @@ const EmployeeDashboard = () => {
                   size={18}
                   className="text-blue-600 dark:text-blue-400"
                 />
-                <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">
                   Tasks From Admin
                 </h3>
               </div>
               <div className="space-y-5">
-                {tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="rounded-2xl border border-gray-100 p-5 dark:border-gray-800"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-[14px] font-bold text-gray-900 dark:text-white">
-                          {task.title}
-                        </p>
-                        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
-                          {task.assignedBy} / Due {task.dueDate}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
-                        {task.status}
-                      </span>
-                    </div>
-
-                    {task.status !== "Completed" ? (
-                      <div className="mt-4">
-                        <textarea
-                          value={drafts[task.id] || ""}
-                          onChange={(event) =>
-                            setDrafts((current) => ({
-                              ...current,
-                              [task.id]: event.target.value,
-                            }))
-                          }
-                          placeholder="Write a short report after completing the task..."
-                          className="min-h-[100px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => submitReport(task.id)}
-                          className="mt-3 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white"
-                        >
-                          Submit Report
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4 text-sm text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
-                        {task.report}
-                      </div>
-                    )}
+                {taskError && (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {taskError}
                   </div>
-                ))}
+                )}
+                {tasks.length === 0 && !taskError ? (
+                  <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-gray-800">
+                    No assigned tasks yet.
+                  </div>
+                ) : (
+                  tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-gray-100 p-5 dark:border-gray-800"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">
+                            {task.title}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {task.assignedBy} / Due {task.dueDate}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
+                          {task.status}
+                        </span>
+                      </div>
+
+                      {!task.report ? (
+                        <div className="mt-4">
+                          <textarea
+                            value={drafts[task.id] || ""}
+                            onChange={(event) =>
+                              setDrafts((current) => ({
+                                ...current,
+                                [task.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Write a short report after completing the task..."
+                            className="min-h-[100px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none dark:border-gray-800 dark:bg-gray-800 dark:text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => submitReport(task.id)}
+                            className="mt-3 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white"
+                          >
+                            Submit Report
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-2xl bg-gray-50 px-4 py-4 text-sm text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
+                          <p>{task.report.summary}</p>
+                          <p className="mt-2 text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                            Report {task.report.status}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </section>
           </div>
@@ -182,7 +281,7 @@ const EmployeeDashboard = () => {
                     size={18}
                     className="text-blue-600 dark:text-blue-400"
                   />
-                  <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
                     Notifications
                   </h3>
                 </div>
@@ -245,7 +344,7 @@ const EmployeeDashboard = () => {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[13px] font-bold text-gray-900 dark:text-white leading-snug">
+                          <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
                             {notification.title}
                           </p>
                           {!notification.is_read && (
@@ -254,7 +353,7 @@ const EmployeeDashboard = () => {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                           {notification.message}
                         </p>
                         <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
@@ -279,6 +378,9 @@ const AdminOverviewDashboard = () => {
   const { user } = useAuth();
   const departmentName = user?.department || "Engineering";
   const overview = getDepartmentOverview(departmentName);
+  const [departmentTasks, setDepartmentTasks] = useState<
+    StoredDepartmentTask[]
+  >(() => taskStore.listForDepartment(user?.departmentId, user?.department));
   const {
     notifications,
     isLoading: isLoadingNotifications,
@@ -289,24 +391,42 @@ const AdminOverviewDashboard = () => {
     markAllAsRead,
   } = useNotifications({ limit: 6, pollIntervalMs: 30000 });
   const hasUnreadNotifications = notifications.some((item) => !item.is_read);
-  const reportedTasks = overview.employees
+  useEffect(() => {
+    const syncTasks = () =>
+      setDepartmentTasks(
+        taskStore.listForDepartment(user?.departmentId, user?.department),
+      );
+
+    syncTasks();
+    window.addEventListener("smart_emp_tasks_updated", syncTasks);
+    return () =>
+      window.removeEventListener("smart_emp_tasks_updated", syncTasks);
+  }, [user?.department, user?.departmentId]);
+
+  const reportedTasks = departmentTasks
+    .filter((task) => task.report)
+    .map((task) => ({ ...task, employeeName: task.employeeName }))
+    .slice(0, 4);
+  const fallbackReportedTasks = overview.employees
     .flatMap((employee) =>
       employee.tasks
         .filter((task) => task.report)
         .map((task) => ({ ...task, employeeName: employee.name })),
     )
     .slice(0, 4);
+  const visibleReportedTasks =
+    reportedTasks.length > 0 ? reportedTasks : fallbackReportedTasks;
 
   return (
     <div className="flex min-h-screen bg-[#F9FAFB] dark:bg-gray-950 transition-colors duration-300">
       <Sidebar />
       <main className="flex-1 p-8 overflow-y-auto">
         <header className="mb-8">
-          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
             Dept Overview
           </h1>
-          <p className="mt-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
-            {departmentName} department snapshot for today.
+          <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">
+            {departmentName} department snapshot for today
           </p>
         </header>
 
@@ -332,10 +452,10 @@ const AdminOverviewDashboard = () => {
               <div className="mb-4 inline-flex rounded-lg bg-blue-50 p-2 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
                 <card.icon size={20} />
               </div>
-              <h3 className="text-[24px] font-bold text-gray-900 dark:text-white">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
                 {card.value}
               </h3>
-              <p className="mt-2 text-[13px] font-semibold text-gray-500 dark:text-gray-400">
+              <p className="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                 {card.label}
               </p>
             </div>
@@ -350,23 +470,23 @@ const AdminOverviewDashboard = () => {
                   size={18}
                   className="text-blue-600 dark:text-blue-400"
                 />
-                <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">
                   Recent Task Reports
                 </h3>
               </div>
               <div className="space-y-4">
-                {reportedTasks.map((task) => (
+                {visibleReportedTasks.map((task) => (
                   <div
                     key={task.id}
                     className="rounded-2xl bg-gray-50 px-4 py-4 dark:bg-gray-800/50"
                   >
-                    <p className="text-[13px] font-bold text-gray-900 dark:text-white">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">
                       {task.title}
                     </p>
-                    <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       {task.employeeName}
                     </p>
-                    <p className="mt-3 text-[12px] text-gray-600 dark:text-gray-300">
+                    <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
                       {task.report?.summary}
                     </p>
                   </div>
@@ -383,7 +503,7 @@ const AdminOverviewDashboard = () => {
                     size={18}
                     className="text-blue-600 dark:text-blue-400"
                   />
-                  <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
                     Notifications
                   </h3>
                 </div>
@@ -394,7 +514,7 @@ const AdminOverviewDashboard = () => {
                     onClick={() => void reloadNotifications()}
                     className="text-xs font-bold text-gray-500 hover:text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
                   >
-                    <RefreshCw size={14} /> Refresh
+                    <RefreshCw size={12} /> Refresh
                   </button>
                   <button
                     type="button"
@@ -404,7 +524,7 @@ const AdminOverviewDashboard = () => {
                     onClick={() => void markAllAsRead()}
                     className="text-xs font-bold text-blue-600 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed flex items-center gap-1"
                   >
-                    <CheckCheck size={14} /> Mark all read
+                    <CheckCheck size={12} /> Mark all read
                   </button>
                 </div>
               </div>
@@ -446,7 +566,7 @@ const AdminOverviewDashboard = () => {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[13px] font-bold text-gray-900 dark:text-white leading-snug">
+                          <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
                             {notification.title}
                           </p>
                           {!notification.is_read && (
@@ -455,7 +575,7 @@ const AdminOverviewDashboard = () => {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                           {notification.message}
                         </p>
                         <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
@@ -496,12 +616,12 @@ const SuperAdminDashboard = () => {
 
       <main className="flex-1 p-8 overflow-y-auto">
         <header className="mb-8">
-          <h1 className="text-[28px] font-extrabold text-gray-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
             Dashboard
           </h1>
-          <p className="text-[15px] text-gray-500 dark:text-gray-400 mt-1 font-medium">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium">
             Welcome back, {userDisplayName}. Here&apos;s what&apos;s happening
-            today.
+            today
           </p>
         </header>
 
@@ -549,7 +669,7 @@ const SuperAdminDashboard = () => {
                   <stat.icon size={20} />
                 </div>
                 <span
-                  className={`text-[12px] font-bold ${
+                  className={`text-xs font-bold ${
                     stat.trend.startsWith("+") || stat.trend.includes("%")
                       ? "text-green-500"
                       : "text-red-500"
@@ -558,10 +678,10 @@ const SuperAdminDashboard = () => {
                   {stat.trend}
                 </span>
               </div>
-              <h3 className="text-[24px] font-bold text-gray-900 dark:text-white leading-none">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white leading-none">
                 {stat.val}
               </h3>
-              <p className="text-[13px] text-gray-400 dark:text-gray-500 font-medium mt-2">
+              <p className="text-xs text-gray-400 dark:text-gray-500 font-medium mt-2">
                 {stat.label}
               </p>
             </div>
@@ -572,7 +692,7 @@ const SuperAdminDashboard = () => {
           <div className="lg:col-span-2 space-y-8">
             <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">
                   Weekly Attendance Overview
                 </h3>
               </div>
@@ -643,7 +763,7 @@ const SuperAdminDashboard = () => {
             </div>
 
             <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all">
-              <h3 className="text-[16px] font-bold text-gray-900 dark:text-white mb-6">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-6">
                 Payroll Expenses
               </h3>
               <div className="h-[240px] w-full">
@@ -688,7 +808,7 @@ const SuperAdminDashboard = () => {
                     size={18}
                     className="text-blue-600 dark:text-blue-400"
                   />
-                  <h3 className="text-[16px] font-bold text-gray-900 dark:text-white">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
                     Notifications
                   </h3>
                 </div>
@@ -751,7 +871,7 @@ const SuperAdminDashboard = () => {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[13px] font-bold text-gray-900 dark:text-white leading-snug">
+                          <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
                             {notification.title}
                           </p>
                           {!notification.is_read && (
@@ -760,7 +880,7 @@ const SuperAdminDashboard = () => {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                           {notification.message}
                         </p>
                         <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">

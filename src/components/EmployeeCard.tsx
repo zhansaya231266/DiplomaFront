@@ -6,6 +6,8 @@ import {
   Edit2,
   Trash2,
   UserCircle,
+  ClipboardList,
+  FileText,
 } from "lucide-react";
 
 type EmployeeCardProps = {
@@ -20,6 +22,9 @@ type EmployeeCardProps = {
   onDelete: () => void;
   onEdit: () => void;
   onView: () => void;
+  onAssignTask?: () => void;
+  onViewReports?: () => void;
+  pendingReportsCount?: number;
 };
 
 const getStatusBadgeClassName = (status: string) => {
@@ -42,6 +47,9 @@ export const EmployeeCard = ({
   onDelete,
   onEdit,
   onView,
+  onAssignTask,
+  onViewReports,
+  pendingReportsCount = 0,
 }: EmployeeCardProps) => {
   const [showMenu, setShowMenu] = useState(false);
 
@@ -63,7 +71,7 @@ export const EmployeeCard = ({
                 onView();
                 setShowMenu(false);
               }}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-[14px] font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
             >
               <UserCircle
                 size={16}
@@ -76,18 +84,48 @@ export const EmployeeCard = ({
                 onEdit();
                 setShowMenu(false);
               }}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-[14px] font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
             >
               <Edit2 size={16} className="text-gray-400 dark:text-gray-500" />
               Edit Employee
             </button>
+            {onAssignTask && (
+              <button
+                onClick={() => {
+                  onAssignTask();
+                  setShowMenu(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
+              >
+                <ClipboardList
+                  size={16}
+                  className="text-gray-400 dark:text-gray-500"
+                />
+                Assign Task
+              </button>
+            )}
+            {onViewReports && (
+              <button
+                onClick={() => {
+                  onViewReports();
+                  setShowMenu(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
+              >
+                <FileText
+                  size={16}
+                  className="text-gray-400 dark:text-gray-500"
+                />
+                Task Reports
+              </button>
+            )}
             <hr className="my-1 border-gray-50 dark:border-gray-700" />
             <button
               onClick={() => {
                 onDelete();
                 setShowMenu(false);
               }}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-[14px] font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
             >
               <Trash2 size={16} />
               Delete
@@ -103,10 +141,10 @@ export const EmployeeCard = ({
           alt={name}
         />
         <div>
-          <h4 className="text-[16px] font-bold leading-tight text-gray-900 dark:text-white">
+          <h4 className="text-base font-bold leading-tight text-gray-900 dark:text-white">
             {name}
           </h4>
-          <p className="mt-0.5 text-[14px] font-medium text-gray-400 dark:text-gray-500">
+          <p className="mt-0.5 text-sm font-medium text-gray-400 dark:text-gray-500">
             {role}
           </p>
         </div>
@@ -115,11 +153,11 @@ export const EmployeeCard = ({
       <div className="mb-6 space-y-3">
         <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
           <Mail size={16} className="text-gray-400 dark:text-gray-500" />
-          <span className="truncate text-[14px]">{email}</span>
+          <span className="truncate text-sm">{email}</span>
         </div>
         <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
           <Phone size={16} className="text-gray-400 dark:text-gray-500" />
-          <span className="text-[14px]">{phone}</span>
+          <span className="text-sm">{phone}</span>
         </div>
       </div>
 
@@ -128,7 +166,7 @@ export const EmployeeCard = ({
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
             Department
           </p>
-          <p className="text-[14px] font-bold text-gray-900 dark:text-gray-200">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-200">
             {dept}
           </p>
         </div>
@@ -136,7 +174,7 @@ export const EmployeeCard = ({
           <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
             Salary
           </p>
-          <p className="text-[14px] font-bold text-gray-900 dark:text-gray-200">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-200">
             {salary}
           </p>
         </div>
@@ -150,6 +188,11 @@ export const EmployeeCard = ({
         >
           {status}
         </span>
+        {pendingReportsCount > 0 && (
+          <span className="ml-2 rounded-lg bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-blue-600 dark:bg-blue-900/20 dark:text-blue-300">
+            {pendingReportsCount} report{pendingReportsCount === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
     </div>
   );

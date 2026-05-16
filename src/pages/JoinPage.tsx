@@ -8,18 +8,18 @@ export const JoinPage = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center py-12 px-4 transition-colors">
       {/* Логотип платформы */}
       <div className="flex items-center gap-3 mb-10">
-        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-          HR
+        <div className="w-12 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+          EMP
         </div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          HRMS Platform
+          Smart EMP
         </h1>
       </div>
 
       <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-[2rem] p-10 shadow-xl border border-gray-100 dark:border-gray-800 text-center">
         <div className="text-4xl mb-4 animate-bounce">👋</div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Welcome to HRMS!
+          Welcome to Smart EMP!
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
           What would you like to do?

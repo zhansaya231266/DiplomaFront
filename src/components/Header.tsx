@@ -7,11 +7,11 @@ export const Header = () => {
       <nav className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo - клик по нему вернет на главную */}
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
-            HR
+          <div className="w-9 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">
+            EMP
           </div>
           <span className="text-xl font-semibold text-gray-900 dark:text-white">
-            HRMS Platform
+            Smart EMP
           </span>
         </Link>
 

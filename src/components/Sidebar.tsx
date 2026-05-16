@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Users,
   Clock,
+  CalendarClock,
   CreditCard,
   BarChart3,
   Settings,
@@ -10,7 +11,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import { normalizeRole } from "../shared/utils/roles";
 
 const superAdminMenuItems = [
@@ -25,7 +26,9 @@ const superAdminMenuItems = [
 const adminMenuItems = [
   { icon: LayoutDashboard, label: "Dept Overview", path: "/dashboard" },
   { icon: Users, label: "My Team", path: "/employees" },
-  { icon: Clock, label: "Attendance", path: "/attendance" },
+  { icon: Clock, label: "My Attendance", path: "/attendance" },
+  { icon: CalendarClock, label: "Team Attendance", path: "/team-attendance" },
+  { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 const employeeMenuItems = [
@@ -33,6 +36,15 @@ const employeeMenuItems = [
   { icon: Clock, label: "Attendance", path: "/attendance" },
   { icon: CreditCard, label: "Payroll", path: "/payroll" },
 ];
+
+const getInitialDarkMode = () => {
+  const savedTheme = localStorage.getItem("theme");
+
+  return (
+    savedTheme === "dark" ||
+    (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  );
+};
 
 export const Sidebar = () => {
   const navigate = useNavigate();
@@ -47,24 +59,16 @@ export const Sidebar = () => {
         : superAdminMenuItems;
 
   // Состояние темы (инициализация из документа или localStorage)
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    return document.documentElement.classList.contains("dark");
-  });
+  const [isDarkMode, setIsDarkMode] = useState(getInitialDarkMode);
 
   // Синхронизация при загрузке
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme");
-    if (
-      savedTheme === "dark" ||
-      (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)
-    ) {
+    if (isDarkMode) {
       document.documentElement.classList.add("dark");
-      setIsDarkMode(true);
     } else {
       document.documentElement.classList.remove("dark");
-      setIsDarkMode(false);
     }
-  }, []);
+  }, [isDarkMode]);
 
   const toggleTheme = () => {
     if (isDarkMode) {
@@ -91,11 +95,11 @@ export const Sidebar = () => {
       <div className="p-6">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8 px-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-blue-500/20">
-            HR
+          <div className="w-9 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-blue-500/20">
+            EMP
           </div>
-          <span className="font-extrabold text-[18px] text-gray-900 dark:text-white tracking-tight">
-            HRMS Platform
+          <span className="font-extrabold text-lg text-gray-900 dark:text-white tracking-tight">
+            Smart EMP
           </span>
         </div>
 
@@ -116,7 +120,7 @@ export const Sidebar = () => {
               >
                 <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
                 <span
-                  className={`text-[14px] ${isActive ? "font-bold" : "font-semibold"}`}
+                  className={`text-sm ${isActive ? "font-bold" : "font-semibold"}`}
                 >
                   {item.label}
                 </span>
@@ -135,7 +139,7 @@ export const Sidebar = () => {
           <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 group-hover:scale-110 transition-transform">
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </div>
-          <span className="text-[13px] font-bold">
+          <span className="text-xs font-bold">
             {isDarkMode ? "Light Mode" : "Dark Mode"}
           </span>
         </button>
@@ -164,7 +168,7 @@ export const Sidebar = () => {
             {/* Информация о пользователе */}
             <div className="flex-1 min-w-0 text-left">
               <p
-                className={`text-[13px] truncate transition-colors ${
+                className={`text-xs truncate transition-colors ${
                   isProfileActive
                     ? "font-black text-blue-600 dark:text-blue-400"
                     : "font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600"
